@@ -137,5 +137,5 @@ class RPDynamics:
 
     def integrate(self, f: np.ndarray) -> None:
         assert f.shape == (3, self.num_actuators)
-        acc, _ = self.forward_dynamics(f)
+        acc = self.forward_dynamics(f)
         self.state.integrate(*acc, self.dt)

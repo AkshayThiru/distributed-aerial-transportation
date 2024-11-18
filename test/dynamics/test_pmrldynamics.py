@@ -65,7 +65,7 @@ def main() -> None:
         dyn_err_seq[i] = PMRLDynamics.inverse_dynamics_error(dyn.state, p, f, T, acc)
         dyn.integrate(f)
 
-    plt.plot(t_seq, dyn_err_seq, label="q")
+    plt.plot(t_seq, dyn_err_seq)
     plt.show()
 
 
