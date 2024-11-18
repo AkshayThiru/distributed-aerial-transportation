@@ -91,10 +91,10 @@ class PMRLState:
         assert ddq.shape == self.q.shape
         assert dvl.shape == (3,)
         assert dwl.shape == (3,)
-        self.q = self.q + self.dq * dt + ddq * dt**2 / 2
+        self.q = self.q + self.dq * dt + ddq * dt ** 2 / 2
         self.dq = self.dq + ddq * dt
         self.project_q()
-        self.xl = self.xl + self.vl * dt + dvl * dt**2 / 2
+        self.xl = self.xl + self.vl * dt + dvl * dt ** 2 / 2
         self.vl = self.vl + dvl * dt
         self.Rl = self.Rl @ pin.exp3((self.wl + dwl * dt / 2) * dt)
         self.wl = self.wl + dwl * dt
@@ -181,7 +181,11 @@ class PMRLDynamics:
 
     @staticmethod
     def inverse_dynamics_error(
-        s: PMRLState, p: PMRLParameters, f: np.ndarray, T: np.ndarray, acc: tuple[np.ndarray, np.ndarray, np.ndarray]
+        s: PMRLState,
+        p: PMRLParameters,
+        f: np.ndarray,
+        T: np.ndarray,
+        acc: tuple[np.ndarray, np.ndarray, np.ndarray],
     ) -> float:
         """Computes error in dynamics equations.
         Inputs:
@@ -200,11 +204,19 @@ class PMRLDynamics:
             + ddq * p.L
             + s.Rl @ (pin.skewSquare(s.wl, s.wl) + pin.skew(dwl)) @ p.r
         )
-        quad_acc_err = np.linalg.norm(dv_quad * p.m - f + gravity_vec * p.m + s.q * T) ** 2
+        quad_acc_err = (
+            np.linalg.norm(dv_quad * p.m - f + gravity_vec * p.m + s.q * T) ** 2
+        )
         load_acc_err = np.linalg.norm(p.ml * dvl - s.q @ T + p.ml * gravity_vec.T) ** 2
         r_cross_q = np.cross(p.r, s.Rl.T @ s.q, axisa=0, axisb=0, axisc=0)
-        load_ang_err = np.linalg.norm(p.Jl @ dwl + pin.skew(s.wl) @ p.Jl @ s.wl - r_cross_q @ T) ** 2
-        ddq_residual_err = np.linalg.norm((s.q * ddq).sum(axis=0) + np.linalg.norm(s.dq, axis=0) ** 2) ** 2
+        load_ang_err = (
+            np.linalg.norm(p.Jl @ dwl + pin.skew(s.wl) @ p.Jl @ s.wl - r_cross_q @ T)
+            ** 2
+        )
+        ddq_residual_err = (
+            np.linalg.norm((s.q * ddq).sum(axis=0) + np.linalg.norm(s.dq, axis=0) ** 2)
+            ** 2
+        )
         dyn_err = np.sqrt(quad_acc_err + load_acc_err + load_ang_err + ddq_residual_err)
         return dyn_err
 

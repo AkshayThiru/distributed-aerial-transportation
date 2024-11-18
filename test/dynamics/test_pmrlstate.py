@@ -2,7 +2,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 from numpy.linalg import norm
 from pinocchio.utils import rotate
-
 from system.point_mass_rigid_link import PMRLState
 
 
@@ -15,28 +14,24 @@ def _pmrl_3robot_state_trajectory(t: float) -> tuple[PMRLState, tuple]:
     b = k3 * np.sin(k2 * t)  # | - angles.
     ca, sa, cb, sb = np.cos(a), np.sin(a), np.cos(b), np.sin(b)
     da, dda = k1, 0
-    db, ddb = k3 * k2 * np.cos(k2 * t), -k3 * k2**2 * np.sin(k2 * t)
+    db, ddb = k3 * k2 * np.cos(k2 * t), -k3 * k2 ** 2 * np.sin(k2 * t)
     q_ = np.array([ca * sb, sa * sb, cb])
     dq_ = np.array(
-        [
-            -sa * sb * da + ca * cb * db,
-            ca * sb * da + sa * cb * db,
-            -sb * db,
-        ]
+        [-sa * sb * da + ca * cb * db, ca * sb * da + sa * cb * db, -sb * db]
     )
     ddq_ = np.array(
         [
-            -ca * sb * da**2
+            -ca * sb * da ** 2
             - 2 * sa * cb * da * db
             - sa * sb * dda
-            - ca * sb * db**2
+            - ca * sb * db ** 2
             + ca * cb * ddb,
-            -sa * sb * da**2
+            -sa * sb * da ** 2
             + 2 * ca * cb * da * db
             + ca * sb * dda
-            - sa * sb * db**2
+            - sa * sb * db ** 2
             + sa * cb * ddb,
-            -cb * db**2 - sb * ddb,
+            -cb * db ** 2 - sb * ddb,
         ]
     )
     q = np.vstack([q_] * 3).T
@@ -54,18 +49,18 @@ def _pmrl_3robot_state_trajectory(t: float) -> tuple[PMRLState, tuple]:
     xl = np.array([ca, sa, sb])
     vl = np.array([-sa * da, ca * da, cb * db])
     dvl = np.array(
-        [-ca * da**2 - sa * dda, -sa * da**2 + ca * dda, -sb * db**2 + cb * ddb]
+        [-ca * da ** 2 - sa * dda, -sa * da ** 2 + ca * dda, -sb * db ** 2 + cb * ddb]
     )
 
     # Rl trajectory.
     if t <= 5:
         Rl = rotate("z", (2 * np.pi) * np.sin(np.pi / 2 * t))
-        wl = np.array([0, 0, np.pi**2 * np.cos(np.pi / 2 * t)])
-        dwl = np.array([0, 0, -np.pi**3 / 2 * np.sin(np.pi / 2 * t)])
+        wl = np.array([0, 0, np.pi ** 2 * np.cos(np.pi / 2 * t)])
+        dwl = np.array([0, 0, -np.pi ** 3 / 2 * np.sin(np.pi / 2 * t)])
     else:
         Rl = rotate("x", (2 * np.pi) * np.sin(np.pi / 2 * t))
-        wl = np.array([np.pi**2 * np.cos(np.pi / 2 * t), 0, 0])
-        dwl = np.array([-np.pi**3 / 2 * np.sin(np.pi / 2 * t), 0, 0])
+        wl = np.array([np.pi ** 2 * np.cos(np.pi / 2 * t), 0, 0])
+        dwl = np.array([-np.pi ** 3 / 2 * np.sin(np.pi / 2 * t), 0, 0])
 
     # Full trajectory.
     state = PMRLState(q, dq, xl, vl, Rl, wl)

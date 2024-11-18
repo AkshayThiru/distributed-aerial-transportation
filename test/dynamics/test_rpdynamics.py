@@ -1,8 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy import constants
-
-from system.rigid_payload import (RPDynamics, RPParameters, RPState)
+from system.rigid_payload import RPDynamics, RPParameters, RPState
 
 
 def _rp_3actuators_parameters() -> RPParameters:
@@ -24,6 +23,7 @@ def _rp_3actuators_init_state() -> RPState:
     Rl = np.eye(3)
     wl = np.array([0.0, 0.0, 0.0])
     return RPState(xl, vl, Rl, wl)
+
 
 def _rp_3actuators_force_trajectory(p: RPParameters, t: float) -> np.ndarray:
     f_ = np.array([0, 0, 1]) * p.ml * constants.g / 3

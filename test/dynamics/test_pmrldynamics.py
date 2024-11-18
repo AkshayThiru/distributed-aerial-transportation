@@ -1,8 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy import constants
-
-from system.point_mass_rigid_link import (PMRLDynamics, PMRLParameters, PMRLState)
+from system.point_mass_rigid_link import (PMRLDynamics, PMRLParameters,
+                                          PMRLState)
 
 
 def _pmrl_3robot_parameters() -> PMRLParameters:
@@ -40,6 +40,7 @@ def _pmrl_3robots_init_state() -> PMRLState:
     Rl = np.eye(3)
     wl = np.array([0.0, 0.0, 0.0])
     return PMRLState(q, dq, xl, vl, Rl, wl)
+
 
 def _pmrl_3robot_force_trajectory(p: PMRLParameters, t: float) -> np.ndarray:
     total_mass = p.m.sum() + p.ml

@@ -7,9 +7,7 @@ _INTEGRATION_STEPS_PER_ROTATION_PROJECTION = 20
 
 
 class RPParameters:
-    def __init__(
-        self, ml: float, Jl: np.ndarray, r: np.ndarray
-    ) -> None:
+    def __init__(self, ml: float, Jl: np.ndarray, r: np.ndarray) -> None:
         """Inputs:
         ml: payload mass, [kg],
         Jl: payload inertia in body frame, [kg-m^2],
@@ -27,11 +25,7 @@ class RPParameters:
 
 class RPState:
     def __init__(
-        self,
-        xl: np.ndarray,
-        vl: np.ndarray,
-        Rl: np.ndarray,
-        wl: np.ndarray,
+        self, xl: np.ndarray, vl: np.ndarray, Rl: np.ndarray, wl: np.ndarray
     ) -> None:
         """Inputs:
         xl: payload CoM position in R^3,
@@ -56,14 +50,12 @@ class RPState:
         """
         self.Rl, _ = polar(self.Rl)
 
-    def integrate(
-        self, dvl: np.ndarray, dwl: np.ndarray, dt: float
-    ) -> None:
+    def integrate(self, dvl: np.ndarray, dwl: np.ndarray, dt: float) -> None:
         """Integrate state along acceleration.
         """
         assert dvl.shape == (3,)
         assert dwl.shape == (3,)
-        self.xl = self.xl + self.vl * dt + dvl * dt**2 / 2
+        self.xl = self.xl + self.vl * dt + dvl * dt ** 2 / 2
         self.vl = self.vl + dvl * dt
         self.Rl = self.Rl @ pin.exp3((self.wl + dwl * dt / 2) * dt)
         self.wl = self.wl + dwl * dt
@@ -107,10 +99,10 @@ class RPDynamics:
         ) @ np.ones((self.num_actuators,))
 
         dvl = net_force / self.params.ml + self.gravity
-        dwl = self.params.Jl_inv @ (net_moment - np.cross(
-            self.state.wl, self.params.Jl @ self.state.wl
-        ))
-        
+        dwl = self.params.Jl_inv @ (
+            net_moment - np.cross(self.state.wl, self.params.Jl @ self.state.wl)
+        )
+
         return (dvl, dwl)
 
     @staticmethod
@@ -129,9 +121,13 @@ class RPDynamics:
         dvl, dwl = acc
         gravity_vec = -constants.g * np.array([0, 0, 1])
         net_force = np.sum(f, axis=1) + p.ml * gravity_vec.T
-        net_moment = np.cross(p.r, s.Rl.T @ f, axisa=0, axisb=0, axisc=0) @ np.ones((p.n,))
+        net_moment = np.cross(p.r, s.Rl.T @ f, axisa=0, axisb=0, axisc=0) @ np.ones(
+            (p.n,)
+        )
         load_acc_err = np.linalg.norm(p.ml * dvl - net_force) ** 2
-        load_ang_err = np.linalg.norm(p.Jl @ dwl + pin.skew(s.wl) @ p.Jl @ s.wl - net_moment) ** 2
+        load_ang_err = (
+            np.linalg.norm(p.Jl @ dwl + pin.skew(s.wl) @ p.Jl @ s.wl - net_moment) ** 2
+        )
         dyn_err = np.sqrt(load_acc_err + load_ang_err)
         return dyn_err
 
