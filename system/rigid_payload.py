@@ -11,7 +11,7 @@ class RPParameters:
         """Inputs:
         ml: payload mass, [kg],
         Jl: payload inertia in body frame, [kg-m^2],
-        r:  rigid link attachment position in body frame, [m], [r1, ..., rn],
+        r:  rigid link attachment position in body frame, [m], [r1, ..., rn].
         """
         self.n = r.shape[1]
         assert Jl.shape == (3, 3)
@@ -71,7 +71,7 @@ class RPDynamics:
     fi:     force by the i-th point actuator at position ri (input) (in ground frame),
     Dynamics:
     ml dxl' = sum_i fi - ml g (0,0,1),
-    Jl wl' + hat(wl) Jl wl = sum_i hat(ri) Rl.T fi,
+    Jl wl' + hat(wl) Jl wl = sum_i hat(ri) Rl.T fi.
     """
 
     def __init__(self, params: RPParameters, state: RPState, dt: float) -> None:
@@ -90,7 +90,7 @@ class RPDynamics:
         Outputs:
         (dvl, dwl); with
         dvl:    acceleration of state.xl,
-        dwl:    derivative of state.wl,
+        dwl:    derivative of state.wl.
         """
         assert f.shape == (3, self.num_actuators)
         net_force = np.sum(f, axis=1)
@@ -114,7 +114,7 @@ class RPDynamics:
         s:      state of the system,
         p:      rigid payload parameters,
         f:      force applied by the actuators,
-        acc:    acceleration, = (dvl, dwl),
+        acc:    acceleration, = (dvl, dwl).
         Outputs:
         err:    Norm of dynamics error.
         """

@@ -193,7 +193,7 @@ class PMRLDynamics:
         p:      system parameters,
         f:      force applied by the actuators,
         T:      tension in the links, = [T1, ..., Tn],
-        acc:    acceleration, = (ddq, dvl, dwl),
+        acc:    acceleration, = (ddq, dvl, dwl).
         Outputs:
         err:    Norm of dynamics error.
         """
