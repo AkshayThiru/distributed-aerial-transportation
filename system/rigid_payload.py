@@ -94,9 +94,10 @@ class RPDynamics:
         """
         assert f.shape == (3, self.num_actuators)
         net_force = np.sum(f, axis=1)
-        net_moment = np.cross(
-            self.params.r, self.state.Rl.T @ f, axisa=0, axisb=0, axisc=0
-        ) @ np.ones((self.num_actuators,))
+        net_moment = np.sum(
+            np.cross(self.params.r, self.state.Rl.T @ f, axisa=0, axisb=0, axisc=0),
+            axis=1,
+        )
 
         dvl = net_force / self.params.ml + self.gravity
         dwl = self.params.Jl_inv @ (
@@ -121,8 +122,8 @@ class RPDynamics:
         dvl, dwl = acc
         gravity_vec = -constants.g * np.array([0, 0, 1])
         net_force = np.sum(f, axis=1) + p.ml * gravity_vec.T
-        net_moment = np.cross(p.r, s.Rl.T @ f, axisa=0, axisb=0, axisc=0) @ np.ones(
-            (p.n,)
+        net_moment = np.sum(
+            np.cross(p.r, s.Rl.T @ f, axisa=0, axisb=0, axisc=0), axis=1
         )
         load_acc_err = np.linalg.norm(p.ml * dvl - net_force) ** 2
         load_ang_err = (
