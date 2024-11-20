@@ -4,29 +4,32 @@ from scipy import constants
 from system.rigid_quadrotor_payload import RQPDynamics, RQPParameters, RQPState
 
 
-def _rqp_3robot_parameters() -> RQPParameters:
-    m = np.array([0.5] * 3)
+def _rqp_nrobot_parameters(n: int) -> RQPParameters:
+    m = np.array([0.5] * n)
     ml = 0.225
     Jq = np.diag([2.32, 2.32, 4]) * 1e-3
-    J = np.empty((3, 3, 3))
-    for i in range(3):
+    J = np.empty((3, 3, n))
+    for i in range(n):
         J[:, :, i] = Jq
     Jl = np.diag([2.1, 1.87, 3.97]) * 1e-2
-    r = np.vstack(
-        [
-            np.array([-0.42, -0.27, 0]),
-            np.array([0.48, -0.27, 0]),
-            np.array([-0.06, 0.55, 0]),
-        ]
-    ).T
+    if n == 3:
+        r = np.vstack(
+            [
+                np.array([-0.42, -0.27, 0]),
+                np.array([0.48, -0.27, 0]),
+                np.array([-0.06, 0.55, 0]),
+            ]
+        ).T
+    else:
+        r = (np.random.random((3, n)) - 0.5) * 2.0
     return RQPParameters(m, J, ml, Jl, r)
 
 
-def _rqp_3robots_init_state() -> RQPState:
-    R = np.empty((3, 3, 3))
-    for i in range(3):
+def _rqp_nrobots_init_state(n: int) -> RQPState:
+    R = np.empty((3, 3, n))
+    for i in range(n):
         R[:, :, i] = np.eye(3)
-    w = np.zeros((3, 3))
+    w = np.zeros((3, n))
     xl = np.array([0.0, 0.0, 0.0])
     vl = np.array([0.0, 0.0, 0.0])
     Rl = np.eye(3)
@@ -34,28 +37,24 @@ def _rqp_3robots_init_state() -> RQPState:
     return RQPState(R, w, xl, vl, Rl, wl)
 
 
-def _rqp_3robot_wrench_trajectory(
-    p: RQPParameters, t: float
+def _rqp_nrobot_wrench_trajectory(
+    p: RQPParameters, t: float, n: int
 ) -> tuple[np.ndarray, np.ndarray]:
-    f_ = np.array([0, 0, 1]) * p.mT * constants.g / 3
-    k1_d, k2_d = p.mT * constants.g / 5, p.mT * constants.g / 5
-    f1_d, f2_d = np.pi / 2, np.pi
-    f_ = f_ + np.array(
-        [k1_d * np.cos(f1_d * t), k1_d * np.sin(f1_d * t), k2_d * np.sin(f2_d * t)]
-    )
-    M = np.random.random((3, 3)) - 0.5
-    return np.vstack([f_] * 3).T, M
+    f = np.random.random((n,)) * p.mT * constants.g / n
+    M = np.random.random((3, n)) - 0.5
+    return f, M
 
 
 def main() -> None:
+    n = 4
     dt = 5e-3
     t_seq = np.arange(0, 10, dt)
     dyn_err_seq = np.empty(t_seq.shape)
-    s0 = _rqp_3robots_init_state()
-    p = _rqp_3robot_parameters()
+    s0 = _rqp_nrobots_init_state(n)
+    p = _rqp_nrobot_parameters(n)
     dyn = RQPDynamics(p, s0, dt)
     for i in range(len(t_seq)):
-        f, M = _rqp_3robot_wrench_trajectory(p, t_seq[i])
+        f, M = _rqp_nrobot_wrench_trajectory(p, t_seq[i], n)
         acc = dyn.forward_dynamics(f, M)
         dyn_err_seq[i] = RQPDynamics.inverse_dynamics_error(dyn.state, p, f, M, acc)
         dyn.integrate(f, M)

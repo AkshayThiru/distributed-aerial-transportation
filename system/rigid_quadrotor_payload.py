@@ -118,7 +118,7 @@ class RQPDynamics:
     Mi:     moment by i-th quadrotor (input) (in i-th quadrotor body frame),
     Ti:     force on payload by i-th quadrotor (internal variable) (in ground frame).
     Dynamics:
-    mi xi'' = fi - mi g (0,0,1) - Ti,
+    mi xi'' = fi Ri e3 - mi g (0,0,1) - Ti,
     Ji wi' + hat(wi) Ji wi = Mi,
     ml dxl' = sum_i Ti - ml g (0,0,1),
     Jl wl' + hat(wl) Jl wl = sum_i hat(ri) Rl.T Ti,
@@ -145,7 +145,7 @@ class RQPDynamics:
         dvl:    acceleration of state.xl,
         dwl:    derivative of state.wl.
         """
-        assert f.shape == (3, self.num_quadrotors)
+        assert f.shape == (self.num_quadrotors,)
         assert M.shape == (3, self.num_quadrotors)
         # Quadrotor angular accelarations.
         dw = np.empty((3, self.num_quadrotors))
@@ -157,9 +157,10 @@ class RQPDynamics:
                 @ self.state.w[:, i]
             )
         # Center of mass accelerations.
-        dv_com = np.sum(f, axis=1) / self.params.mT + self.gravity
+        quad_force = self.state.R[:, 2, :] * f
+        dv_com = np.sum(quad_force, axis=1) / self.params.mT + self.gravity
         net_moment_com = np.sum(
-            np.cross(self.params.r_com, self.state.Rl.T @ f, axisa=0, axisb=0, axisc=0),
+            np.cross(self.params.r_com, self.state.Rl.T @ quad_force, axisa=0, axisb=0, axisc=0),
             axis=1,
         )
         dwl = self.params.JT_inv @ (
@@ -197,7 +198,7 @@ class RQPDynamics:
         dv_quad = (
             np.vstack(dvl) + s.Rl @ (pin.skewSquare(s.wl, s.wl) + pin.skew(dwl)) @ p.r
         )
-        internal_force = f + np.vstack(gravity_vec) * p.m - p.m * dv_quad
+        internal_force = s.R[:, 2, :] * f + np.vstack(gravity_vec) * p.m - p.m * dv_quad
         com_acc_err = np.linalg.norm(
             p.ml * dvl - p.ml * gravity_vec - np.sum(internal_force, axis=1)
         )
@@ -221,7 +222,7 @@ class RQPDynamics:
         return dyn_err
 
     def integrate(self, f: np.ndarray, M: np.ndarray) -> None:
-        assert f.shape == (3, self.num_quadrotors)
+        assert f.shape == (self.num_quadrotors,)
         assert M.shape == (3, self.num_quadrotors)
         acc = self.forward_dynamics(f, M)
         self.state.integrate(*acc, self.dt)
