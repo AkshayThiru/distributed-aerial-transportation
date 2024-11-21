@@ -39,3 +39,21 @@ def rotation_matrix_from_z_vector(q: np.ndarray, project: bool = False) -> np.nd
         for i in range(n):
             R[:, :, i], _ = polar(R[:, :, i])
     return R
+
+
+def rotation_matrix_a_to_b(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """Returns a rotation matrix to rotate a to b.
+    a and b must be unit vectors.
+    """
+    u = a + b
+    normsq = np.dot(u, u)
+    if normsq == 0.0:
+        e1 = np.array([1, 0, 0])
+        u = np.cross(a, e1)
+        normsq = np.dot(u, u)
+        if normsq == 0.0:
+            e2 = np.array([0, 1, 0])
+            u = np.cross(a, e2)
+            normsq = np.dot(u, u)
+            assert normsq > 0.0
+    return 2 * np.outer(u, u) / normsq - np.eye(3)
