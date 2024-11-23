@@ -26,7 +26,7 @@ def rotation_matrix_from_z_vector(q: np.ndarray, project: bool = False) -> np.nd
     R = np.zeros((3, 3, n))
     R[:, 2, :] = q
     sin_x = -q[1, :]
-    cos_x = np.sqrt(1 - sin_x ** 2)
+    cos_x = np.sqrt(1 - sin_x**2)
     assert all(cos_x > 0)
     sin_y = q[0, :] / cos_x
     cos_y = q[2, :] / cos_x

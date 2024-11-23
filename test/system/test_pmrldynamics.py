@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy import constants
+
 from system.point_mass_rigid_link import (PMRLDynamics, PMRLParameters,
                                           PMRLState)
 
@@ -24,16 +25,8 @@ def _pmrl_nrobot_parameters(n: int) -> PMRLParameters:
 
 
 def _pmrl_nrobots_init_state(n: int) -> PMRLState:
-    q = np.vstack(
-        [
-            np.array([0.0, 0.0, 1.0]),
-        ] * n
-    ).T
-    dq = np.vstack(
-        [
-            np.array([0.0, 0.0, 0.0]),
-        ] * n
-    ).T
+    q = np.vstack([np.array([0.0, 0.0, 1.0])] * n).T
+    dq = np.vstack([np.array([0.0, 0.0, 0.0])] * n).T
     xl = np.array([0.0, 0.0, 0.0])
     vl = np.array([0.0, 0.0, 0.0])
     Rl = np.eye(3)

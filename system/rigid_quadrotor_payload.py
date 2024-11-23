@@ -90,8 +90,7 @@ class RQPState:
     def integrate(
         self, dw: np.ndarray, dvl: np.ndarray, dwl: np.ndarray, dt: float
     ) -> None:
-        """Integrate state along acceleration.
-        """
+        """Integrate state along acceleration."""
         assert dw.shape == self.w.shape
         assert dvl.shape == (3,)
         assert dwl.shape == (3,)
@@ -100,7 +99,7 @@ class RQPState:
                 (self.w[:, i] + dw[:, i] * dt / 2) * dt
             )
             self.w[:, i] = self.w[:, i] + dw[:, i] * dt
-        self.xl = self.xl + self.vl * dt + dvl * dt ** 2 / 2
+        self.xl = self.xl + self.vl * dt + dvl * dt**2 / 2
         self.vl = self.vl + dvl * dt
         self.Rl = self.Rl @ pin.exp3((self.wl + dwl * dt / 2) * dt)
         self.wl = self.wl + dwl * dt
@@ -160,7 +159,13 @@ class RQPDynamics:
         quad_force = self.state.R[:, 2, :] * f
         dv_com = np.sum(quad_force, axis=1) / self.params.mT + self.gravity
         net_moment_com = np.sum(
-            np.cross(self.params.r_com, self.state.Rl.T @ quad_force, axisa=0, axisb=0, axisc=0),
+            np.cross(
+                self.params.r_com,
+                self.state.Rl.T @ quad_force,
+                axisa=0,
+                axisb=0,
+                axisc=0,
+            ),
             axis=1,
         )
         dwl = self.params.JT_inv @ (
@@ -218,7 +223,7 @@ class RQPDynamics:
                 )
                 ** 2
             )
-        dyn_err = np.sqrt(com_acc_err ** 2 + com_ang_err ** 2 + quad_ang_err_sq)
+        dyn_err = np.sqrt(com_acc_err**2 + com_ang_err**2 + quad_ang_err_sq)
         return dyn_err
 
     def integrate(self, f: np.ndarray, M: np.ndarray) -> None:

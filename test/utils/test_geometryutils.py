@@ -1,6 +1,7 @@
 import meshcat
 import meshcat.geometry as geom
 import numpy as np
+
 from utils.geometry_utils import faces_from_vertex_rep, mesh_from_halfspace_rep
 
 

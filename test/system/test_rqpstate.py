@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from numpy.linalg import norm
 from pinocchio.utils import rotate
+
 from system.rigid_quadrotor_payload import RQPState
 
 
@@ -17,18 +18,18 @@ def _rqp_nrobot_state_trajectory(t: float, n: int) -> tuple[RQPState, tuple]:
     xl = np.array([ca, sa, sb])
     vl = np.array([-sa * da, ca * da, cb * db])
     dvl = np.array(
-        [-ca * da ** 2 - sa * dda, -sa * da ** 2 + ca * dda, -sb * db ** 2 + cb * ddb]
+        [-ca * da**2 - sa * dda, -sa * da**2 + ca * dda, -sb * db**2 + cb * ddb]
     )
 
     # R trajectories.
     if t <= 5:
         Rl = rotate("z", (2 * np.pi) * np.sin(np.pi / 2 * t))
-        wl = np.array([0, 0, np.pi ** 2 * np.cos(np.pi / 2 * t)])
-        dwl = np.array([0, 0, -np.pi ** 3 / 2 * np.sin(np.pi / 2 * t)])
+        wl = np.array([0, 0, np.pi**2 * np.cos(np.pi / 2 * t)])
+        dwl = np.array([0, 0, -np.pi**3 / 2 * np.sin(np.pi / 2 * t)])
     else:
         Rl = rotate("x", (2 * np.pi) * np.sin(np.pi / 2 * t))
-        wl = np.array([np.pi ** 2 * np.cos(np.pi / 2 * t), 0, 0])
-        dwl = np.array([-np.pi ** 3 / 2 * np.sin(np.pi / 2 * t), 0, 0])
+        wl = np.array([np.pi**2 * np.cos(np.pi / 2 * t), 0, 0])
+        dwl = np.array([-np.pi**3 / 2 * np.sin(np.pi / 2 * t), 0, 0])
     R = np.empty((3, 3, n))
     w = np.empty((3, n))
     dw = np.empty((3, n))
