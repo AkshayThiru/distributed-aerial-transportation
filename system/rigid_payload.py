@@ -161,7 +161,7 @@ class RPDynamics:
 
 
 class RPCollision:
-    """Class for storing the collision objects of the system."""
+    """Class for storing the collision objects of the RP system."""
 
     def __init__(
         self, payload_vertices: np.ndarray, payload_mesh_vertices: np.ndarray
@@ -231,6 +231,7 @@ class RPVisualizer:
         Rl = state.Rl
         r = self.param.r
         n = self.param.n
+        assert f.shape == (3, n)
         # Update payload object and mesh.
         T = tf.translation_matrix(xl)
         T[:3, :3] = Rl
@@ -250,9 +251,8 @@ class RPVisualizer:
             else:
                 force_dir = f[:, i] / force_length
             force_length = np.max([force_length * _FORCE_SCALING, _FORCE_MIN_LENGTH])
-            Rf = rotation_matrix_a_to_b(np.array([0, 1, 0]), force_dir)
             T = tf.translation_matrix(xl + Rl @ r[:, i] + force_length / 2 * force_dir)
-            T[:3, :3] = Rf
+            T[:3, :3] = rotation_matrix_a_to_b(np.array([0, 1, 0]), force_dir)
             # Create new force tail.
             vis[force_tail].delete()
             vis[force_tail].set_object(

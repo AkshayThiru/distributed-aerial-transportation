@@ -1,6 +1,5 @@
 import meshcat
 import numpy as np
-import pinocchio as pin
 from scipy import constants
 
 from example.setup import rp_setup
