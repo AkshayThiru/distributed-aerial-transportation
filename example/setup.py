@@ -1,5 +1,6 @@
 import numpy as np
 
+from system.point_mass_rigid_link import PMRLCollision, PMRLParameters, PMRLState
 from system.rigid_payload import RPCollision, RPParameters, RPState
 from system.rigid_quadrotor_payload import (RQPCollision, RQPParameters,
                                             RQPState)
@@ -121,4 +122,65 @@ def rqp_setup(n: int) -> tuple[RQPParameters, RQPCollision, RQPState]:
         _rqp_nquadrotors_parameters(n),
         _rqp_collision(),
         _rqp_nquadrotors_init_state(n),
+    )
+
+
+# Point-mass-rigid-link system setup.
+def _pmrl_nactuators_parameters(n: int) -> PMRLParameters:
+    if n == 3:
+        m = np.array([0.5] * 3)
+        ml = 0.225
+        Jl = np.diag([2.1, 1.87, 3.97]) * 1e-2
+        r = np.vstack(
+            [
+                np.array([-0.42, -0.27, 0]),
+                np.array([0.48, -0.27, 0]),
+                np.array([-0.06, 0.55, 0]),
+            ]
+        ).T
+        L = np.array([1.0] * 3)
+    else:
+        raise NotImplementedError
+    return PMRLParameters(m, ml, Jl, r, L)
+
+
+def _pmrl_collision() -> PMRLCollision:
+    payload_vertices = np.array(
+        [
+            [-0.42, -0.27, 0],
+            [0.48, -0.27, 0],
+            [-0.06, 0.55, 0],
+            [-0.42, -0.27, -0.1],
+            [0.48, -0.27, -0.1],
+            [-0.06, 0.55, -0.1],
+        ]
+    )
+    payload_mesh_vertices = np.array(
+        [
+            [-0.52, -0.37, 0.1],
+            [0.58, -0.37, 0.1],
+            [-0.06, 0.65, 0.1],
+            [-0.52, -0.37, -0.2],
+            [0.58, -0.37, -0.2],
+            [-0.06, 0.65, -0.2],
+        ]
+    )
+    return PMRLCollision(payload_vertices, payload_mesh_vertices)
+
+
+def _pmrl_nactuators_init_state(n: int) -> PMRLState:
+    q = np.vstack([np.array([0.0, 0.0, 1.0])] * n).T
+    dq = np.vstack([np.array([0.0, 0.0, 0.0])] * n).T
+    xl = np.array([0.0, 0.0, 0.0])
+    vl = np.array([0.0, 0.0, 0.0])
+    Rl = np.eye(3)
+    wl = np.array([0.0, 0.0, 0.0])
+    return PMRLState(q, dq, xl, vl, Rl, wl)
+
+
+def pmrl_setup(n: int) -> tuple[PMRLParameters, PMRLCollision, PMRLState]:
+    return (
+        _pmrl_nactuators_parameters(n),
+        _pmrl_collision(),
+        _pmrl_nactuators_init_state(n),
     )

@@ -22,6 +22,7 @@ _FORCE_MATERIAL = gm.MeshLambertMaterial(
 )
 
 _ACTUATOR_RADIUS = 0.05  # [m].
+_DRAW_FORCE_ARROWS = False
 _FORCE_TAIL_RADIUS = 0.01  # [m].
 _FORCE_HEAD_BASE_RADIUS = 0.03  # [m].
 _FORCE_HEAD_LENGTH = 0.1  # [m].
@@ -203,28 +204,29 @@ class RPVisualizer:
             vis[actuator].set_object(gm.Sphere(_ACTUATOR_RADIUS), _OBJ_MATERIAL)
             vis[actuator].set_transform(tf.translation_matrix(self.param.r[:, i]))
         # Set force arrows.
-        for i in range(n):
-            force_tail = "rp_force_tail_" + str(i)
-            force_head = "rp_force_head_" + str(i)
-            vis[force_tail].set_object(
-                gm.Cylinder(height=_FORCE_MIN_LENGTH, radius=_FORCE_TAIL_RADIUS),
-                _FORCE_MATERIAL,
-            )
-            vis[force_head].set_object(
-                gm.Cylinder(
-                    height=_FORCE_HEAD_LENGTH,
-                    radiusBottom=_FORCE_HEAD_BASE_RADIUS,
-                    radiusTop=0.0,
-                ),
-                _FORCE_MATERIAL,
-            )
-            T = tf.translation_matrix(
-                np.array([0, 0, _FORCE_MIN_LENGTH / 2]) + self.param.r[:, i]
-            )
-            T[:3, :3] = rotation_matrix_a_to_b(np.array([0, 1, 0]), np.array([0, 0, 1]))
-            vis[force_tail].set_transform(T)
-            T[2, 3] += _FORCE_MIN_LENGTH / 2 + _FORCE_HEAD_LENGTH / 2
-            vis[force_head].set_transform(T)
+        if _DRAW_FORCE_ARROWS:
+            for i in range(n):
+                force_tail = "rp_force_tail_" + str(i)
+                force_head = "rp_force_head_" + str(i)
+                vis[force_tail].set_object(
+                    gm.Cylinder(height=_FORCE_MIN_LENGTH, radius=_FORCE_TAIL_RADIUS),
+                    _FORCE_MATERIAL,
+                )
+                vis[force_head].set_object(
+                    gm.Cylinder(
+                        height=_FORCE_HEAD_LENGTH,
+                        radiusBottom=_FORCE_HEAD_BASE_RADIUS,
+                        radiusTop=0.0,
+                    ),
+                    _FORCE_MATERIAL,
+                )
+                T = tf.translation_matrix(
+                    np.array([0, 0, _FORCE_MIN_LENGTH / 2]) + self.param.r[:, i]
+                )
+                T[:3, :3] = rotation_matrix_a_to_b(np.array([0, 1, 0]), np.array([0, 0, 1]))
+                vis[force_tail].set_transform(T)
+                T[2, 3] += _FORCE_MIN_LENGTH / 2 + _FORCE_HEAD_LENGTH / 2
+                vis[force_head].set_transform(T)
 
     def update(self, state: RPState, f: np.ndarray, vis: Visualizer) -> None:
         xl = state.xl
@@ -242,24 +244,25 @@ class RPVisualizer:
             actuator = "rp_actuator_" + str(i)
             vis[actuator].set_transform(tf.translation_matrix(xl + Rl @ r[:, i]))
         # Update force arrows.
-        for i in range(n):
-            force_tail = "rp_force_tail_" + str(i)
-            force_head = "rp_force_head_" + str(i)
-            force_length = np.linalg.norm(f[:, i])
-            if force_length == 0:
-                force_dir = np.array([0, 0, 1])
-            else:
-                force_dir = f[:, i] / force_length
-            force_length = np.max([force_length * _FORCE_SCALING, _FORCE_MIN_LENGTH])
-            T = tf.translation_matrix(xl + Rl @ r[:, i] + force_length / 2 * force_dir)
-            T[:3, :3] = rotation_matrix_a_to_b(np.array([0, 1, 0]), force_dir)
-            # Create new force tail.
-            vis[force_tail].delete()
-            vis[force_tail].set_object(
-                gm.Cylinder(height=force_length, radius=_FORCE_TAIL_RADIUS),
-                _FORCE_MATERIAL,
-            )
-            vis[force_tail].set_transform(T)
-            # Update force heads.
-            T[:3, 3] += (force_length + _FORCE_HEAD_LENGTH) / 2 * force_dir
-            vis[force_head].set_transform(T)
+        if _DRAW_FORCE_ARROWS:
+            for i in range(n):
+                force_tail = "rp_force_tail_" + str(i)
+                force_head = "rp_force_head_" + str(i)
+                force_length = np.linalg.norm(f[:, i])
+                if force_length == 0:
+                    force_dir = np.array([0, 0, 1])
+                else:
+                    force_dir = f[:, i] / force_length
+                force_length = np.max([force_length * _FORCE_SCALING, _FORCE_MIN_LENGTH])
+                T = tf.translation_matrix(xl + Rl @ r[:, i] + force_length / 2 * force_dir)
+                T[:3, :3] = rotation_matrix_a_to_b(np.array([0, 1, 0]), force_dir)
+                # Create new force tail.
+                vis[force_tail].delete()
+                vis[force_tail].set_object(
+                    gm.Cylinder(height=force_length, radius=_FORCE_TAIL_RADIUS),
+                    _FORCE_MATERIAL,
+                )
+                vis[force_tail].set_transform(T)
+                # Update force heads.
+                T[:3, 3] += (force_length + _FORCE_HEAD_LENGTH) / 2 * force_dir
+                vis[force_head].set_transform(T)
