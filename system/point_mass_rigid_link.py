@@ -24,7 +24,7 @@ _FORCE_MATERIAL = gm.MeshLambertMaterial(
 )
 
 _ACTUATOR_RADIUS = 0.05  # [m].
-_ACTUATOR_MESH_RADIUS = 0.15 # [m].
+_ACTUATOR_MESH_RADIUS = 0.15  # [m].
 _LINK_RADIUS = 0.01  # [m].
 _DRAW_FORCE_ARROWS = False
 _FORCE_TAIL_RADIUS = 0.01  # [m].
@@ -296,22 +296,22 @@ class PMRLVisualizer:
         n = self.params.n
         for i in range(n):
             link = "pmrl_link_" + str(i)
-            vis[link].set_object(
-                gm.Cylinder(self.params.L[i], _LINK_RADIUS)
+            vis[link].set_object(gm.Cylinder(self.params.L[i], _LINK_RADIUS))
+            T = tf.translation_matrix(
+                np.array([0, 0, self.params.L[i] / 2]) + self.params.r[:, i]
             )
-            T = tf.translation_matrix(np.array([0, 0, self.params.L[i] / 2]) + self.params.r[:, i])
             T[:3, :3] = rotation_matrix_a_to_b(np.array([0, 1, 0]), np.array([0, 0, 1]))
             vis[link].set_transform(T)
             # Set actuators and meshes.
             actuator = "pmrl_actuator_" + str(i)
             actuator_mesh = "pmrl_actuator_mesh_" + str(i)
-            vis[actuator].set_object(
-                gm.Sphere(_ACTUATOR_RADIUS), _OBJ_MATERIAL
-            )
+            vis[actuator].set_object(gm.Sphere(_ACTUATOR_RADIUS), _OBJ_MATERIAL)
             vis[actuator_mesh].set_object(
                 gm.Sphere(_ACTUATOR_MESH_RADIUS), _MESH_MATERIAL
             )
-            T = tf.translation_matrix(np.array([0, 0, self.params.L[i]]) + self.params.r[:, i])
+            T = tf.translation_matrix(
+                np.array([0, 0, self.params.L[i]]) + self.params.r[:, i]
+            )
             vis[actuator].set_transform(T)
             vis[actuator_mesh].set_transform(T)
         # Set force arrows.
@@ -332,9 +332,12 @@ class PMRLVisualizer:
                     _FORCE_MATERIAL,
                 )
                 T = tf.translation_matrix(
-                    np.array([0, 0, _FORCE_MIN_LENGTH / 2 + self.params.L[i]]) + self.params.r[:, i]
+                    np.array([0, 0, _FORCE_MIN_LENGTH / 2 + self.params.L[i]])
+                    + self.params.r[:, i]
                 )
-                T[:3, :3] = rotation_matrix_a_to_b(np.array([0, 1, 0]), np.array([0, 0, 1]))
+                T[:3, :3] = rotation_matrix_a_to_b(
+                    np.array([0, 1, 0]), np.array([0, 0, 1])
+                )
                 vis[force_tail].set_transform(T)
                 T[2, 3] += _FORCE_MIN_LENGTH / 2 + _FORCE_HEAD_LENGTH / 2
                 vis[force_head].set_transform(T)
@@ -375,8 +378,12 @@ class PMRLVisualizer:
                     force_dir = np.array([0, 0, 1])
                 else:
                     force_dir = f[:, i] / force_length
-                force_length = np.max([force_length * _FORCE_SCALING, _FORCE_MIN_LENGTH])
-                T = tf.translation_matrix(xl + Rl @ r[:, i] + q[:, i] * L[i] + force_length / 2 * force_dir)
+                force_length = np.max(
+                    [force_length * _FORCE_SCALING, _FORCE_MIN_LENGTH]
+                )
+                T = tf.translation_matrix(
+                    xl + Rl @ r[:, i] + q[:, i] * L[i] + force_length / 2 * force_dir
+                )
                 T[:3, :3] = rotation_matrix_a_to_b(np.array([0, 1, 0]), force_dir)
                 # Create new force tail.
                 vis[force_tail].delete()

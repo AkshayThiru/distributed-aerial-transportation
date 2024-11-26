@@ -1,6 +1,7 @@
 import numpy as np
 
-from system.point_mass_rigid_link import PMRLCollision, PMRLParameters, PMRLState
+from system.point_mass_rigid_link import (PMRLCollision, PMRLParameters,
+                                          PMRLState)
 from system.rigid_payload import RPCollision, RPParameters, RPState
 from system.rigid_quadrotor_payload import (RQPCollision, RQPParameters,
                                             RQPState)

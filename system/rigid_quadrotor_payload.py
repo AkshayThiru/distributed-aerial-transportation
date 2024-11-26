@@ -334,7 +334,9 @@ class RQPVisualizer:
                     + self.param.r[:, i]
                     + _FORCE_OFFSET
                 )
-                T[:3, :3] = rotation_matrix_a_to_b(np.array([0, 1, 0]), np.array([0, 0, 1]))
+                T[:3, :3] = rotation_matrix_a_to_b(
+                    np.array([0, 1, 0]), np.array([0, 0, 1])
+                )
                 vis[force_tail].set_transform(T)
                 T[2, 3] += _FORCE_MIN_LENGTH / 2 + _FORCE_HEAD_LENGTH / 2
                 vis[force_head].set_transform(T)

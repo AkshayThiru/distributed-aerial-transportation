@@ -3,8 +3,8 @@ import numpy as np
 from scipy import constants
 
 from example.setup import pmrl_setup
-from system.point_mass_rigid_link import (PMRLDynamics, PMRLParameters, PMRLState,
-                                  PMRLVisualizer)
+from system.point_mass_rigid_link import (PMRLDynamics, PMRLParameters,
+                                          PMRLState, PMRLVisualizer)
 
 
 def _pmrl_nactuators_force_trajectory(

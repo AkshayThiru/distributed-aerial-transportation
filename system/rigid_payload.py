@@ -223,7 +223,9 @@ class RPVisualizer:
                 T = tf.translation_matrix(
                     np.array([0, 0, _FORCE_MIN_LENGTH / 2]) + self.param.r[:, i]
                 )
-                T[:3, :3] = rotation_matrix_a_to_b(np.array([0, 1, 0]), np.array([0, 0, 1]))
+                T[:3, :3] = rotation_matrix_a_to_b(
+                    np.array([0, 1, 0]), np.array([0, 0, 1])
+                )
                 vis[force_tail].set_transform(T)
                 T[2, 3] += _FORCE_MIN_LENGTH / 2 + _FORCE_HEAD_LENGTH / 2
                 vis[force_head].set_transform(T)
@@ -253,8 +255,12 @@ class RPVisualizer:
                     force_dir = np.array([0, 0, 1])
                 else:
                     force_dir = f[:, i] / force_length
-                force_length = np.max([force_length * _FORCE_SCALING, _FORCE_MIN_LENGTH])
-                T = tf.translation_matrix(xl + Rl @ r[:, i] + force_length / 2 * force_dir)
+                force_length = np.max(
+                    [force_length * _FORCE_SCALING, _FORCE_MIN_LENGTH]
+                )
+                T = tf.translation_matrix(
+                    xl + Rl @ r[:, i] + force_length / 2 * force_dir
+                )
                 T[:3, :3] = rotation_matrix_a_to_b(np.array([0, 1, 0]), force_dir)
                 # Create new force tail.
                 vis[force_tail].delete()
