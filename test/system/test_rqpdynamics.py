@@ -43,7 +43,7 @@ def _rqp_nrobot_wrench_trajectory(
 ) -> tuple[np.ndarray, np.ndarray]:
     f = np.random.random((n,)) * p.mT * constants.g / n
     M = np.random.random((3, n)) - 0.5
-    return f, M
+    return (f, M)
 
 
 def main() -> None:
@@ -55,10 +55,10 @@ def main() -> None:
     p = _rqp_nrobot_parameters(n)
     dyn = RQPDynamics(p, s0, dt)
     for i in range(len(t_seq)):
-        f, M = _rqp_nrobot_wrench_trajectory(p, t_seq[i], n)
-        acc = dyn.forward_dynamics(f, M)
-        dyn_err_seq[i] = RQPDynamics.inverse_dynamics_error(dyn.state, p, f, M, acc)
-        dyn.integrate(f, M)
+        w = _rqp_nrobot_wrench_trajectory(p, t_seq[i], n)
+        acc = dyn.forward_dynamics(w)
+        dyn_err_seq[i] = RQPDynamics.inverse_dynamics_error(dyn.state, p, w, acc)
+        dyn.integrate(w)
 
     plt.plot(t_seq, dyn_err_seq)
     plt.show()

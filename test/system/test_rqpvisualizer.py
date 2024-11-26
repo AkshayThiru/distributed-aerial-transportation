@@ -12,7 +12,7 @@ def _rqp_nactuators_force_trajectory(
 ) -> np.ndarray:
     f = (1 + np.sin(np.pi * t) / 5) * p.mT * constants.g / n * np.ones((n,))
     M = np.zeros((3, n))
-    return f, M
+    return (f, M)
 
 
 def main() -> None:
@@ -28,9 +28,9 @@ def main() -> None:
     t_seq = np.arange(0, 10, dt)
     dyn = RQPDynamics(params, s0, dt)
     for i in range(len(t_seq)):
-        f, M = _rqp_nactuators_force_trajectory(params, dyn.state, t_seq[i], n)
-        dyn.integrate(f, M)
-        visualizer.update(dyn.state, f, vis)
+        w = _rqp_nactuators_force_trajectory(params, dyn.state, t_seq[i], n)
+        dyn.integrate(w)
+        visualizer.update(dyn.state, w[0], vis)
 
 
 if __name__ == "__main__":
