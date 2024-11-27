@@ -7,7 +7,8 @@ import numpy as np
 import pinocchio as pin
 from scipy.linalg import polar
 
-from utils.so3_tracking_controllers import (so3_pd_tracking_control,
+from utils.so3_tracking_controllers import (So3PDParameters, So3SMParameters,
+                                            so3_pd_tracking_control,
                                             so3_sm_tracking_control)
 
 mpl.rcParams["mathtext.fontset"] = "cm"
@@ -61,7 +62,7 @@ def _test_so3_tracking_control() -> None:
     scale = 1 / 0.0820 * J[0, 0]
     k_R = 8.81 * scale
     k_Omega = 2.54 * scale
-    pd_params = (k_R, k_Omega)
+    pd_params = So3PDParameters(k_R, k_Omega)
     pd_control = lambda R, w: so3_pd_tracking_control(R, Rd, w, wd, dwd, J, pd_params)
     pd_errs = _get_so3_tracking_errors(pd_control, R, Rd, w, wd, J, dt, T)
 
@@ -70,7 +71,7 @@ def _test_so3_tracking_control() -> None:
     l_R = 25.0 * scale
     k_s = 4.0 * scale
     l_s = 2.0 * scale
-    sm_params = (r, k_R, l_R, k_s, l_s)
+    sm_params = So3SMParameters(r, k_R, l_R, k_s, l_s)
     sm_control = lambda R, w: so3_sm_tracking_control(R, Rd, w, wd, dwd, J, sm_params)
     sm_errs = _get_so3_tracking_errors(sm_control, R, Rd, w, wd, J, dt, T)
 
