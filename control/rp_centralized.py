@@ -3,7 +3,7 @@ import numpy as np
 import pinocchio as pin
 from scipy import constants
 
-from system.rigid_payload import RPCollision, RPDynamics, RPParameters, RPState
+from system.rigid_payload import RPCollision, RPParameters, RPState
 
 
 class RPCentralizedController:
@@ -69,6 +69,7 @@ class RPCentralizedController:
         #   dh = -2 vl.T dvl,
         #   dh + alpha h >= 0.
         self._set_velocity_norm_cbf_constraint()
+        # TODO: Environment collision constraints.
 
         self.cost = 0
         # Total force cost.
@@ -145,10 +146,10 @@ class RPCentralizedController:
         # z-force lower bound.
         self.min_fz = self.ml * self.g / (self.n * 10.0)
         # Force cone angle bound.
-        max_f_ang = np.pi / 3.0
-        self.tan_max_f_ang = np.tan(max_f_ang)
+        max_f_ang = np.pi / 6.0
+        self.sec_max_f_ang = 1.0 / np.cos(max_f_ang)
         # Force norm bound.
-        self.max_f = self.ml * self.g
+        self.max_f = (2.0 / self.n) * self.ml * self.g
         # Payload angle CBF constants.
         max_p_ang = np.pi / 6.0
         self.cos_max_p_ang = np.cos(max_p_ang)
@@ -229,7 +230,7 @@ class RPCentralizedController:
         self.cons += [self.f[2, :] >= self.min_fz]
 
     def _set_force_cone_angle_bound_constraint(self) -> None:
-        self.cons += [cv.norm2(self.f, axis=0) <= self.tan_max_f_ang * self.f[2, :]]
+        self.cons += [cv.norm2(self.f, axis=0) <= self.sec_max_f_ang * self.f[2, :]]
 
     def _set_force_norm_bound_constraint(self) -> None:
         self.cons += [cv.norm2(self.f, axis=0) <= self.max_f]
@@ -291,28 +292,3 @@ class RPCentralizedController:
             if self.verbose:
                 print(f"Problem not solved to optimality, status: {self.prob.status}")
             return self.prev_f
-
-        ##### TODO:
-        # dvl = self.dvl.value
-        # dwl = self.dwl.value
-        # Rl = self.Rl.value
-        # ddq = self.ddq.value
-        # T = self.T.value
-        # f = self.f.value
-        # gravity_vector = -constants.g * np.array([0, 0, 1])
-        # OK:
-        # print(np.linalg.norm(self.ml * dvl - self.q.value @ T - self.ml * gravity_vector))
-        # print(np.linalg.norm(self.Jl @ dwl + self.w_cross_Jw.value - self.r_cross_q.value @ T))
-
-        # OK:
-        # err = np.empty((self.n,))
-        # for i in range(self.n):
-        #     cor_acc = self.R_w_hat_sq.value @ self.r[:, i] - Rl @ pin.skew(self.r[:, i]) @ dwl
-        #     dvq = dvl + self.L[i] * ddq[:, i] + cor_acc
-        #     err[i] = np.linalg.norm(-self.m[i] * dvq + f[:, i] + self.m[i] * gravity_vector - T[i] * self.q.value[:, i])
-        # print(np.linalg.norm(err))
-
-        # print(f"from control: {dvl}")
-        # print(f"from control: {T}")
-
-        # print(PMRLDynamics.inverse_dynamics_error(state, self.param, f, T, (ddq, dvl, dwl)))
