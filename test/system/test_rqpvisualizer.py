@@ -9,7 +9,7 @@ from system.rigid_quadrotor_payload import (RQPDynamics, RQPParameters,
 
 def _rqp_nactuators_force_trajectory(
     p: RQPParameters, s: RQPState, t: float, n: int
-) -> np.ndarray:
+) -> tuple[np.ndarray, np.ndarray]:
     f = (1 + np.sin(np.pi * t) / 5) * p.mT * constants.g / n * np.ones((n,))
     M = np.zeros((3, n))
     return (f, M)
