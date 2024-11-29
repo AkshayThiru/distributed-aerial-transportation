@@ -18,7 +18,7 @@ class Index:
 
 
 class RQPPrimalSolver:
-    """Solver for the primal step of the distributed RQP controller.
+    """Solver for the primal step of the dual decomposition RQP controller.
 
     min_{dv_com, dvl, dwl, fi, Fi, Mi}
         (k_f/n) ||(fi + Fi) - mT g e3||^2 + (k_m/n) ||Mi + r_comi x Rl.T fi||^2
@@ -445,7 +445,7 @@ class RQPPrimalSolver:
         return mat
 
 
-class RQPDistributedController:
+class RQPDDController:
     """Dual decomposition-based distributed solver for the RQP controller."""
 
     def __init__(
@@ -493,7 +493,6 @@ class RQPDistributedController:
         self.leader_idx = 0
 
         # Convergence tolerance (inf-norm).
-        # TODO: Use absolute and relative tolerances.
         self.prim_inf_tol = 1e-2  # [N].
         # Dual ascent regularization term.
         self.beta = 0
@@ -543,6 +542,27 @@ class RQPDistributedController:
         self.A = A
         self.qn_mat_chol = cho_factor(qn_mat)
 
+    def _get_primal_inf_err(self, state: RQPState) -> float:
+        primal_inf_err_F = np.empty((3, self.n))
+        primal_inf_err_M = np.empty((3, self.n))
+        moments_ = np.cross(
+            self.r_com, state.Rl.T @ self.f, axisa=0, axisb=0, axisc=0
+        )
+        for i in range(self.n):
+            primal_inf_err_F[:, i] = self.F[:, i] - (
+                np.sum(self.f, axis=1) - self.f[:, i]
+            )
+            primal_inf_err_M[:, i] = self.M[:, i] - (
+                np.sum(moments_, axis=1) - moments_[:, i]
+            )
+        primal_inf_err = np.max(
+            (
+                np.linalg.norm(primal_inf_err_F, np.inf),
+                np.linalg.norm(primal_inf_err_M, np.inf),
+            )
+        )
+        return primal_inf_err
+
     def _dual_ascent_step(self, state: RQPState) -> None:
         # Primal optimal value.
         prim_opt = np.empty((9, self.n))
@@ -571,11 +591,8 @@ class RQPDistributedController:
         """
         self._qn_mat_cholesky(state)
 
-        primal_inf_err_F = np.empty((3, self.n))
-        primal_inf_err_M = np.empty((3, self.n))
         iter = 0
         while True:
-            iter += 1
             for i in range(self.n):
                 # Update cost parameters.
                 c_Fi = self.lambda_F[:, i]
@@ -587,24 +604,10 @@ class RQPDistributedController:
                 self.f[:, i], self.F[:, i], self.M[:, i] = self.primal_solvers[i].solve(
                     state, acc_des, c_fi, c_Fi, c_Mi
                 )
-            # Compute primal infeasibility (dual gradient).
-            moments_ = np.cross(
-                self.r_com, state.Rl.T @ self.f, axisa=0, axisb=0, axisc=0
-            )
-            for i in range(self.n):
-                primal_inf_err_F[:, i] = self.F[:, i] - (
-                    np.sum(self.f, axis=1) - self.f[:, i]
-                )
-                primal_inf_err_M[:, i] = self.M[:, i] - (
-                    np.sum(moments_, axis=1) - moments_[:, i]
-                )
-            primal_inf_err = np.max(
-                (
-                    np.linalg.norm(primal_inf_err_F, np.inf),
-                    np.linalg.norm(primal_inf_err_M, np.inf),
-                )
-            )
-            # Check if dual gradient satisfies tolerance
+            iter += 1
+            # Get primal infeasibility error.
+            primal_inf_err = self._get_primal_inf_err(state)
+            # Check if dual gradient satisfies tolerance.
             if primal_inf_err < self.prim_inf_tol:
                 break
             # Update dual variables.
@@ -613,3 +616,6 @@ class RQPDistributedController:
 
     def get_force_cone_angle_bound(self) -> float:
         return self.primal_solvers[0].max_f_ang
+
+    def set_force_err_tolerance(self, tol: float):
+        self.prim_inf_tol = tol

@@ -214,8 +214,8 @@ class RQPCentralizedController:
         self.dvl_des = cv.Parameter(3)
         self.dwl_des = cv.Parameter(3)
         # Dependent parameters.
-        self.v_norm2 = cv.Parameter()
-        self.w_norm2 = cv.Parameter()
+        self.v_norm2 = cv.Parameter(nonneg=True)
+        self.w_norm2 = cv.Parameter(nonneg=True)
         self.R_w_hat = cv.Parameter((3, 3))
         self.R_w_hat_sq = cv.Parameter((3, 3))
         self.J_inv_w_cross_Jw = cv.Parameter(3)
@@ -352,6 +352,9 @@ class RQPCentralizedController:
             if self.verbose:
                 print(f"Problem not solved to optimality, status: {self.prob.status}")
             return self.prev_f
+
+    def get_force_cone_angle_bound(self) -> float:
+        return self.max_f_ang
 
 
 class RQPLowLevelController:
