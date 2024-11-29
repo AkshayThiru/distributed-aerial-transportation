@@ -57,7 +57,8 @@ def main() -> None:
         hl_controller = RQPDistributedController(params, col, s0, dt, verbose=True)
     else:
         raise NotImplementedError
-    ll_controller = RQPLowLevelController("pd", params, hl_controller.max_f_ang)
+    max_f_ang = hl_controller.get_force_cone_angle_bound()
+    ll_controller = RQPLowLevelController("pd", params, max_f_ang)
     visualizer = RQPVisualizer(params, col, vis)
 
     t_seq = np.arange(0, 20, dt)

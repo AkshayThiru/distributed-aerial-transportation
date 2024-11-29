@@ -5,6 +5,7 @@ import cvxpy as cv
 import numpy as np
 import pinocchio as pin
 from scipy import constants
+from scipy.linalg import cho_factor, cho_solve
 
 from system.rigid_quadrotor_payload import (RQPCollision, RQPParameters,
                                             RQPState)
@@ -237,8 +238,8 @@ class RQPPrimalSolver:
         self.dvl_des = cv.Parameter(3)
         self.dwl_des = cv.Parameter(3)
         # Dependent parameters.
-        self.v_norm2 = cv.Parameter()
-        self.w_norm2 = cv.Parameter()
+        self.v_norm2 = cv.Parameter(nonneg=True)
+        self.w_norm2 = cv.Parameter(nonneg=True)
         self.R_w_hat = cv.Parameter((3, 3))
         self.R_w_hat_sq = cv.Parameter((3, 3))
         self.J_inv_w_cross_Jw = cv.Parameter(3)
@@ -445,6 +446,8 @@ class RQPPrimalSolver:
 
 
 class RQPDistributedController:
+    """Dual decomposition-based distributed solver for the RQP controller."""
+
     def __init__(
         self,
         params: RQPParameters,
@@ -467,9 +470,6 @@ class RQPDistributedController:
             idx = Index(i, (i == self.leader_idx))
             solver = RQPPrimalSolver(params, col, idx, state, dt, verbose=False)
             self.primal_solvers.append(solver)
-
-        # Derived constants.
-        self.max_f_ang = self.primal_solvers[0].max_f_ang
 
         # Set warm start solutions.
         self._set_warm_start()
@@ -497,6 +497,10 @@ class RQPDistributedController:
         self.prim_inf_tol = 1e-2  # [N].
         # Dual ascent regularization term.
         self.beta = 0
+        # Constraint matrix.
+        self.A = np.empty((6 * self.n, 9 * self.n))
+        # Quasi-Newton matrix Cholesky decomposition object.
+        self.qn_mat_chol = cho_factor(np.eye(6 * self.n))
 
     def _set_variables(self) -> None:
         # Primal variables.
@@ -514,7 +518,7 @@ class RQPDistributedController:
             self.F[:, i] = self.primal_solvers[0].prev_Fi
             self.M[:, i] = self.primal_solvers[0].prev_Mi
 
-    def _dual_ascent_step(self, state: RQPState) -> None:
+    def _qn_mat_cholesky(self, state: RQPState) -> None:
         # Compute strong convexity inverse matrix.
         Q_inv = np.zeros((9 * self.n, 9 * self.n))
         for i in range(self.n):
@@ -536,17 +540,20 @@ class RQPDistributedController:
                 )
         # Quasi-Newton matrix.
         qn_mat = A @ Q_inv @ A.T + self.beta * np.eye(6 * self.n)
+        self.A = A
+        self.qn_mat_chol = cho_factor(qn_mat)
 
+    def _dual_ascent_step(self, state: RQPState) -> None:
         # Primal optimal value.
         prim_opt = np.empty((9, self.n))
         prim_opt[:3, :] = self.f
         prim_opt[3:6, :] = self.F
         prim_opt[6:, :] = self.M
         # Dual gradient.
-        dual_grad = A @ prim_opt.reshape((9 * self.n,), order="F")
+        dual_grad = self.A @ prim_opt.reshape((9 * self.n,), order="F")
 
         # Dual step.
-        dual_step = np.linalg.lstsq(qn_mat, dual_grad, rcond=None)[0].reshape(
+        dual_step = cho_solve(self.qn_mat_chol, dual_grad).reshape(
             (6, self.n), order="F"
         )
         # Dual update.
@@ -562,6 +569,8 @@ class RQPDistributedController:
         Fi + fi = sum_j fj,
         Mi + r_comi x Rl.T fi = sum_j r_comj x Rl.T fj.
         """
+        self._qn_mat_cholesky(state)
+
         primal_inf_err_F = np.empty((3, self.n))
         primal_inf_err_M = np.empty((3, self.n))
         iter = 0
@@ -601,3 +610,6 @@ class RQPDistributedController:
             # Update dual variables.
             self._dual_ascent_step(state)
         return self.f
+
+    def get_force_cone_angle_bound(self) -> float:
+        return self.primal_solvers[0].max_f_ang
