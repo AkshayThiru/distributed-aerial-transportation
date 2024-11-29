@@ -13,7 +13,8 @@ from utils.so3_tracking_controllers import (So3PDParameters, So3SMParameters,
 class RQPCentralizedController:
     """Centralized controller for the rigid-quadrotor-payload system.
 
-    min_{dv_com, dvl, dwl, f} k_f ||sum_i f - ml g e3||^2 + k_feq sum_i ||fi - fi_eq||^2
+    min_{dv_com, dvl, dwl, f} k_f ||sum_i f - mT g e3||^2 + k_m ||sum_i r_comi x Rl.T fi||^2
+                              + k_feq sum_i ||fi - fi_eq||^2
                               + k_dvl ||dvl - dvl_des||^2 + k_dwl ||dwl - dwl_des||^2
                               + k_smooth sum_i (||fi||^2 - <fi, qi'>^2),
     s.t.    mT dv_com = sum_i fi - mT g e3,
@@ -21,10 +22,10 @@ class RQPCentralizedController:
             dvl = dv_com - Rl hat(wl)^2 x_com + Rl hat(x_com) dwl,
             fi_z >= min_fz, for i = 1, ..., n,
             ||fi||_2 <= sec(max_f_ang) fi_z, for i = 1, ..., n,
-            ||fi||_2 <= f_max, for i = 1, ..., n,
+            ||fi||_2 <= max_f, for i = 1, ..., n,
             e3.T Rl e3 >= cos(max_p_ang) -> second-order CBF,
             ||wl||^2 <= max_wl ** 2 -> CBF,
-            ||vl||^2 <= max_vl ** 2 -> CBF,
+            ||vl||^2 <= max_vl ** 2 -> CBF.
     """
 
     def __init__(
@@ -84,6 +85,9 @@ class RQPCentralizedController:
         # Total force cost.
         #   k_f ||sum_i f - mT g e3||^2.
         self._set_total_force_cost()
+        # Total moment cost.
+        #   k_m ||sum_i r_comi x Rl.T fi||^2.
+        self._set_total_moment_cost()
         # Equilibrium force cost.
         #   k_feq sum_i ||fi - fi_eq||^2.
         self._set_equilibrium_force_cost()
@@ -104,7 +108,7 @@ class RQPCentralizedController:
         acc_des = (dvl_des, dwl_des)
         self._update_cvx_parameters(state, acc_des)
 
-        self.prev_f = self.f_eq
+        self._set_warm_start()
         self.prob = cv.Problem(cv.Minimize(self.cost), self.cons)
         if self.verbose:
             print("Optimization problem is DCP:", self.prob.is_dcp())
@@ -182,6 +186,8 @@ class RQPCentralizedController:
         # Costs:
         # Total force constant.
         self.k_f = 0.1
+        # Total moment constant.
+        self.k_m = 0.1
         # Equilibrium force constant.
         self.k_feq = 0.1
         # Desired acceleration constant.
@@ -299,6 +305,12 @@ class RQPCentralizedController:
         f_err = cv.sum(self.f, axis=1) - self.mT * self.g * np.array([0.0, 0.0, 1.0])
         self.cost += self.k_f * cv.sum_squares(f_err)
 
+    def _set_total_moment_cost(self) -> None:
+        moment = 0
+        for i in range(self.n):
+            moment += pin.skew(self.r_com[:, i]) @ self.Rl.T @ self.f[:, i]
+        self.cost += self.k_m * cv.sum_squares(moment)
+
     def _set_equilibrium_force_cost(self) -> None:
         feq_err = self.f - self.f_eq
         self.cost += self.k_feq * cv.sum_squares(feq_err)
@@ -318,6 +330,15 @@ class RQPCentralizedController:
             self.cost += self.k_smooth * cv.sum_squares(
                 self.Rq_orth[:, i].reshape((3, 2)).T @ self.f[:, i]
             )
+
+    # Warm start.
+    def _set_warm_start(self) -> None:
+        self.prev_f = self.f_eq
+
+        self.dv_com.value = np.zeros((3,))
+        self.dvl.value = np.zeros((3,))
+        self.dwl.value = np.zeros((3,))
+        self.f.value = self.f_eq
 
     def control(
         self, state: RQPState, acc_des: tuple[np.ndarray, np.ndarray]
@@ -344,17 +365,19 @@ class RQPLowLevelController:
     ) -> None:
         self._set_constants(params, max_f_ang)
 
+        dwd = np.zeros((3,))
         if so3_controller_type == "pd":
             self.ll_params = self.pd_params
+            self.controller = lambda R, Rd, w, wd, i: so3_pd_tracking_control(
+                R, Rd, w, wd, dwd, self.J[:, :, i], self.ll_params
+            )
         elif so3_controller_type == "sm":
             self.ll_params = self.sm_params
+            self.controller = lambda R, Rd, w, wd, i: so3_sm_tracking_control(
+                R, Rd, w, wd, dwd, self.J[:, :, i], self.ll_params
+            )
         else:
             raise NotImplementedError
-
-        dwd = np.zeros((3,))
-        self.controller = lambda R, Rd, w, wd, i: so3_pd_tracking_control(
-            R, Rd, w, wd, dwd, self.J[:, :, i], self.ll_params
-        )
 
     def _set_constants(self, params: RQPParameters, max_f_ang: float) -> None:
         # System constants.

@@ -15,7 +15,7 @@ class RPCentralizedController:
             Jl dwl + wl x Jl wl = sum_i ri x Rl.T fi,
             fi_z >= min_fz, for i = 1, ..., n,
             ||fi||_2 <= sec(max_f_ang) fi_z, for i = 1, ..., n,
-            ||fi||_2 <= f_max, for i = 1, ..., n,
+            ||fi||_2 <= max_f, for i = 1, ..., n,
             e3.T Rl e3 >= cos(max_p_ang) -> second-order CBF,
             ||wl||^2 <= max_wl ** 2 -> CBF,
             ||vl||^2 <= max_vl ** 2 -> CBF,
@@ -90,7 +90,7 @@ class RPCentralizedController:
         acc_des = (dvl_des, dwl_des)
         self._update_cvx_parameters(state, acc_des)
 
-        self.prev_f = self.f_eq
+        self._set_warm_start()
         self.prob = cv.Problem(cv.Minimize(self.cost), self.cons)
         if self.verbose:
             print("Optimization problem is DCP:", self.prob.is_dcp())
@@ -279,6 +279,14 @@ class RPCentralizedController:
         self.cost += self.k_dwl * (
             cv.sum_squares(self.dwl) - 2 * self.dwl_des @ self.dwl
         )
+
+    # Warm start.
+    def _set_warm_start(self) -> None:
+        self.prev_f = self.f_eq
+
+        self.dvl.value = np.zeros((3,))
+        self.dwl.value = np.zeros((3,))
+        self.f.value = self.f_eq
 
     def control(
         self, state: RPState, acc_des: tuple[np.ndarray, np.ndarray]
