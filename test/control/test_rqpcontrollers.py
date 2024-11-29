@@ -5,7 +5,8 @@ import numpy as np
 
 from control.rqp_centralized import (RQPCentralizedController,
                                      RQPLowLevelController)
-from control.rqp_distributed import RQPDistributedController
+from control.rqp_dd import RQPDDController
+from control.rqp_cadmm import RQPCADMMController
 from example.setup import rqp_setup
 from system.rigid_quadrotor_payload import RQPDynamics, RQPState, RQPVisualizer
 
@@ -46,6 +47,7 @@ def main() -> None:
     hl_rel_freq = 10
     # controller_type = "centralized"
     controller_type = "dual-decomposition"
+    # controller_type = "consensus-admm"
 
     vis = meshcat.Visualizer()
     vis.open()
@@ -54,7 +56,9 @@ def main() -> None:
     if controller_type == "centralized":
         hl_controller = RQPCentralizedController(params, col, s0, dt, verbose=True)
     elif controller_type == "dual-decomposition":
-        hl_controller = RQPDistributedController(params, col, s0, dt, verbose=True)
+        hl_controller = RQPDDController(params, col, s0, dt, verbose=True)
+    elif controller_type == "consensus-admm":
+        hl_controller = RQPCADMMController(params, col, s0, dt, verbose=True)
     else:
         raise NotImplementedError
     max_f_ang = hl_controller.get_force_cone_angle_bound()
