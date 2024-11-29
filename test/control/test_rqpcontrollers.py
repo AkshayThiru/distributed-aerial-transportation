@@ -5,6 +5,7 @@ import numpy as np
 
 from control.rqp_centralized import (RQPCentralizedController,
                                      RQPLowLevelController)
+from control.rqp_distributed import RQPDistributedController
 from example.setup import rqp_setup
 from system.rigid_quadrotor_payload import RQPDynamics, RQPState, RQPVisualizer
 
@@ -43,12 +44,19 @@ def main() -> None:
     n = 3
     dt = 1e-3
     hl_rel_freq = 10
+    # controller_type = "centralized"
+    controller_type = "dual-decomposition"
 
     vis = meshcat.Visualizer()
     vis.open()
 
     params, col, s0 = rqp_setup(n)
-    hl_controller = RQPCentralizedController(params, col, s0, dt, verbose=True)
+    if controller_type == "centralized":
+        hl_controller = RQPCentralizedController(params, col, s0, dt, verbose=True)
+    elif controller_type == "dual-decomposition":
+        hl_controller = RQPDistributedController(params, col, s0, dt, verbose=True)
+    else:
+        raise NotImplementedError
     ll_controller = RQPLowLevelController("pd", params, hl_controller.max_f_ang)
     visualizer = RQPVisualizer(params, col, vis)
 
