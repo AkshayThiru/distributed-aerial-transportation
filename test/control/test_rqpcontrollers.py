@@ -102,19 +102,22 @@ def _plot_convergence_rate(dyn: RQPDynamics, args: tuple) -> None:
         sharex=True,
         layout="constrained",
     )
-    err_max_dd = np.max(err_seq_dd, axis=0)
-    err_min_dd = np.min(err_seq_dd, axis=0) + 1e-9
-    err_avg_dd = np.mean(err_seq_dd, axis=0)
-    err_std_dd = np.std(err_seq_dd, axis=0)
-    err_max_cadmm = np.max(err_seq_cadmm, axis=0)
-    err_min_cadmm = np.min(err_seq_cadmm, axis=0) + 1e-9
-    err_avg_cadmm = np.mean(err_seq_cadmm, axis=0)
-    err_std_cadmm = np.std(err_seq_cadmm, axis=0)
+    err_stats_dd = compute_aggregate_statistics(err_seq_dd)
+    err_stats_cadmm = compute_aggregate_statistics(err_seq_cadmm)
     iters = np.arange(max_iter)
-    ax.plot(iters, err_avg_dd, "--b", lw=1, label=r"DD")
-    ax.plot(iters, err_avg_cadmm, "--r", lw=1, label=r"C-ADMM")
-    ax.fill_between(iters, err_min_dd, err_max_dd, alpha=0.1, color="b", lw=1)
-    ax.fill_between(iters, err_min_cadmm, err_max_cadmm, alpha=0.1, color="r", lw=1)
+    ax.plot(iters, err_stats_dd[2], "--b", lw=1, label=r"DD")
+    ax.plot(iters, err_stats_cadmm[2], "--r", lw=1, label=r"C-ADMM")
+    ax.fill_between(
+        iters, err_stats_dd[0] + 1e-10, err_stats_dd[1], alpha=0.1, color="b", lw=1
+    )
+    ax.fill_between(
+        iters,
+        err_stats_cadmm[0] + 1e-10,
+        err_stats_cadmm[1],
+        alpha=0.1,
+        color="r",
+        lw=1,
+    )
     ax.legend(loc="upper right")
     ax.set_yscale("log")
 
@@ -125,9 +128,10 @@ def main() -> None:
     n = 3
     dt = 1e-3
     hl_rel_freq = 10
-    # controller_type = "centralized"
+    vis_rel_freq = 10
+    controller_type = "centralized"
     # controller_type = "dual-decomposition"
-    controller_type = "consensus-admm"
+    # controller_type = "consensus-admm"
 
     vis = meshcat.Visualizer()
     vis.open()
@@ -145,8 +149,8 @@ def main() -> None:
     max_f_ang = hl_controller.get_force_cone_angle_bound()
     ll_controller = RQPLowLevelController("pd", params, max_f_ang)
 
-    # args = (params, col, s0, dt, False)
-    # _plot_convergence_rate(dyn, args)
+    args = (params, col, s0, dt, False)
+    _plot_convergence_rate(dyn, args)
 
     visualizer = RQPVisualizer(params, col, vis)
 
@@ -164,7 +168,7 @@ def main() -> None:
             solve_time.append(stats.solve_time)
         w = ll_controller.control(dyn.state, f_des)
         dyn.integrate(w)
-        if i % hl_rel_freq == 0:
+        if i % vis_rel_freq == 0:
             visualizer.update(dyn.state, w[0], vis)
         x_err[i] = np.linalg.norm(x_ref - dyn.state.xl)
         v_err[i] = np.linalg.norm(v_ref - dyn.state.vl)
