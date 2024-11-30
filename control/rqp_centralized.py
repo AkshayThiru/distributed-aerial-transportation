@@ -1,3 +1,6 @@
+from dataclasses import dataclass
+from typing import List
+
 import cvxpy as cv
 import numpy as np
 import pinocchio as pin
@@ -8,6 +11,13 @@ from system.rigid_quadrotor_payload import (RQPCollision, RQPParameters,
 from utils.so3_tracking_controllers import (So3PDParameters, So3SMParameters,
                                             so3_pd_tracking_control,
                                             so3_sm_tracking_control)
+
+
+@dataclass
+class SolverStatistics:
+    iter: int
+    solve_time: float
+    err_seq: List[float] | None = None
 
 
 class RQPCentralizedController:
@@ -342,16 +352,15 @@ class RQPCentralizedController:
 
     def control(
         self, state: RQPState, acc_des: tuple[np.ndarray, np.ndarray]
-    ) -> np.ndarray:
+    ) -> tuple[np.ndarray, SolverStatistics]:
         self._update_cvx_parameters(state, acc_des)
         self.prob.solve(solver=cv.CLARABEL, warm_start=True)
         if self.prob.status == cv.OPTIMAL:
             self.prev_f = self.f.value
-            return self.f.value
-        else:
-            if self.verbose:
-                print(f"Problem not solved to optimality, status: {self.prob.status}")
-            return self.prev_f
+        elif self.verbose:
+            print(f"Problem not solved to optimality, status: {self.prob.status}")
+        stats = SolverStatistics(-1, self.prob.solver_stats.solve_time)
+        return self.prev_f, stats
 
     def get_force_cone_angle_bound(self) -> float:
         return self.max_f_ang

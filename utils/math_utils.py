@@ -57,3 +57,13 @@ def rotation_matrix_a_to_b(a: np.ndarray, b: np.ndarray) -> np.ndarray:
             normsq = np.dot(u, u)
             assert normsq > 0.0
     return 2 * np.outer(u, u) / normsq - np.eye(3)
+
+
+def compute_aggregate_statistics(a: np.ndarray) -> tuple[float, float, float, float]:
+    """Returns min, max, avg, std of the elements in a."""
+    a_ = a.reshape((-1,))
+    min = np.min(a_)
+    max = np.max(a_)
+    avg = np.mean(a_)
+    std = np.std(a_)
+    return min, max, avg, std

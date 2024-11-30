@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from time import perf_counter
 from typing import List
 
 import cvxpy as cv
@@ -7,6 +8,7 @@ import pinocchio as pin
 from scipy import constants
 from scipy.linalg import cho_factor, cho_solve
 
+from control.rqp_centralized import SolverStatistics
 from system.rigid_quadrotor_payload import (RQPCollision, RQPParameters,
                                             RQPState)
 
@@ -383,7 +385,7 @@ class RQPPrimalSolver:
         c_fi: np.ndarray = np.zeros((3,)),
         c_Fi: np.ndarray = np.zeros((3,)),
         c_Mi: np.ndarray = np.zeros((3,)),
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
         self._update_cvx_parameters(state, acc_des, c_fi, c_Fi, c_Mi)
         self.prob.solve(solver=cv.CLARABEL, warm_start=True)
         if self.prob.status == cv.OPTIMAL:
@@ -392,7 +394,8 @@ class RQPPrimalSolver:
             self.prev_Mi = self.Mi.value
         elif self.verbose:
             print(f"Problem not solved to optimality, status: {self.prob.status}")
-        return (self.prev_fi, self.prev_Fi, self.prev_Mi)
+        solve_time = self.prob.solver_stats.solve_time
+        return self.prev_fi, self.prev_Fi, self.prev_Mi, solve_time
 
     def set_leader(self) -> None:
         self.idx.is_leader = True
@@ -494,6 +497,7 @@ class RQPDDController:
 
         # Convergence tolerance (inf-norm).
         self.prim_inf_tol = 1e-2  # [N].
+        self.max_iter = 100
         # Dual ascent regularization term.
         self.beta = 0
         # Constraint matrix.
@@ -545,9 +549,7 @@ class RQPDDController:
     def _get_primal_inf_err(self, state: RQPState) -> float:
         primal_inf_err_F = np.empty((3, self.n))
         primal_inf_err_M = np.empty((3, self.n))
-        moments_ = np.cross(
-            self.r_com, state.Rl.T @ self.f, axisa=0, axisb=0, axisc=0
-        )
+        moments_ = np.cross(self.r_com, state.Rl.T @ self.f, axisa=0, axisb=0, axisc=0)
         for i in range(self.n):
             primal_inf_err_F[:, i] = self.F[:, i] - (
                 np.sum(self.f, axis=1) - self.f[:, i]
@@ -584,15 +586,21 @@ class RQPDDController:
         self,
         state: RQPState,
         acc_des: tuple[np.ndarray, np.ndarray],
-    ) -> np.ndarray:
+    ) -> tuple[np.ndarray, SolverStatistics]:
         """Consensus equations:
         Fi + fi = sum_j fj,
         Mi + r_comi x Rl.T fi = sum_j r_comj x Rl.T fj.
         """
+        total_solve_time = 0.0
+        start_time = perf_counter()
         self._qn_mat_cholesky(state)
+        stop_time = perf_counter()
+        total_solve_time += stop_time - start_time
 
         iter = 0
+        err_seq = []
         while True:
+            primal_solve_time = 0.0
             for i in range(self.n):
                 # Update cost parameters.
                 c_Fi = self.lambda_F[:, i]
@@ -601,21 +609,32 @@ class RQPDDController:
                     self.r_com[:, i]
                 ) @ (np.sum(self.lambda_M, axis=1) - c_Mi)
                 # Solve primal problems.
-                self.f[:, i], self.F[:, i], self.M[:, i] = self.primal_solvers[i].solve(
-                    state, acc_des, c_fi, c_Fi, c_Mi
-                )
+                self.f[:, i], self.F[:, i], self.M[:, i], time_ = self.primal_solvers[
+                    i
+                ].solve(state, acc_des, c_fi, c_Fi, c_Mi)
+                primal_solve_time = np.max((primal_solve_time, time_))
+            total_solve_time += primal_solve_time
             iter += 1
+
+            start_time = perf_counter()
             # Get primal infeasibility error.
             primal_inf_err = self._get_primal_inf_err(state)
             # Check if dual gradient satisfies tolerance.
-            if primal_inf_err < self.prim_inf_tol:
+            if (primal_inf_err < self.prim_inf_tol) or (iter > self.max_iter):
                 break
+            err_seq.append(primal_inf_err)
             # Update dual variables.
             self._dual_ascent_step(state)
-        return self.f
+            stop_time = perf_counter()
+            total_solve_time += stop_time - start_time
+        stats = SolverStatistics(iter, total_solve_time, err_seq)
+        return self.f, stats
 
     def get_force_cone_angle_bound(self) -> float:
         return self.primal_solvers[0].max_f_ang
 
     def set_force_err_tolerance(self, tol: float):
         self.prim_inf_tol = tol
+
+    def set_max_iter(self, max_iter: int) -> None:
+        self.max_iter = max_iter

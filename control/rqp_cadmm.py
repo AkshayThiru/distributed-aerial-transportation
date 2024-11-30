@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from time import perf_counter
 from typing import List
 
 import cvxpy as cv
@@ -6,6 +7,7 @@ import numpy as np
 import pinocchio as pin
 from scipy import constants
 
+from control.rqp_centralized import SolverStatistics
 from system.rigid_quadrotor_payload import (RQPCollision, RQPParameters,
                                             RQPState)
 
@@ -302,7 +304,10 @@ class RQPPrimalSolver:
         self.cons += [self.f[2, self.idx.i] >= self.min_fz]
 
     def _set_force_cone_angle_bound_constraint(self) -> None:
-        self.cons += [cv.norm2(self.f[:, self.idx.i]) <= self.sec_max_f_ang * self.f[2, self.idx.i]]
+        self.cons += [
+            cv.norm2(self.f[:, self.idx.i])
+            <= self.sec_max_f_ang * self.f[2, self.idx.i]
+        ]
 
     def _set_force_norm_bound_constraint(self) -> None:
         self.cons += [cv.norm2(self.f[:, self.idx.i]) <= self.max_f]
@@ -359,7 +364,9 @@ class RQPPrimalSolver:
         )
 
     def _set_force_smoothing_cost(self) -> None:
-        self.cost += self.k_smooth * cv.sum_squares(self.Rqi_orth.T @ self.f[:, self.idx.i])
+        self.cost += self.k_smooth * cv.sum_squares(
+            self.Rqi_orth.T @ self.f[:, self.idx.i]
+        )
 
     def _set_cadmm_cost(self) -> None:
         # <lambda_f, f> + (rho/2) (||f||^2 - 2 <f_mean, f>)
@@ -385,16 +392,15 @@ class RQPPrimalSolver:
         lambda_f: np.ndarray = None,
         cadmm_rho: float = 0,
         f_mean: np.ndarray = None,
-    ) -> np.ndarray:
+    ) -> tuple[np.ndarray, float]:
         self._update_cvx_parameters(state, acc_des, lambda_f, cadmm_rho, f_mean)
         self.prob.solve(solver=cv.CLARABEL, warm_start=True)
         if self.prob.status == cv.OPTIMAL:
             self.prev_f = self.f.value
-            return self.f.value
-        else:
-            if self.verbose:
-                print(f"Problem not solved to optimality, status: {self.prob.status}")
-            return self.prev_f
+        elif self.verbose:
+            print(f"Problem not solved to optimality, status: {self.prob.status}")
+        solve_time = self.prob.solver_stats.solve_time
+        return self.prev_f, solve_time
 
     def set_leader(self) -> None:
         self.idx.is_leader = True
@@ -453,6 +459,7 @@ class RQPCADMMController:
         # Convergence tolerance (inf-norm) for residuals.
         self.res_tol = 1e-2  # [N].
         self.use_total_res = True
+        self.max_iter = 100
         # Rho constants.
         self.rho0 = 1.0
         self.tau_incr = 1.0
@@ -471,9 +478,15 @@ class RQPCADMMController:
             self.f[:, :, i] = self.primal_solvers[0].f_eq
         self.f_mean = self.primal_solvers[0].f_eq
 
-    def _get_mean_and_residual(self, state: RQPState) -> tuple[np.ndarray, float, float]:
+    def _get_mean_and_residual(
+        self, state: RQPState
+    ) -> tuple[np.ndarray, float, float]:
         # Compute primal mean and aggregate variables.
-        f_app, F, M = np.empty((3, self.n)), np.empty((3, self.n)), np.empty((3, self.n))
+        f_app, F, M = (
+            np.empty((3, self.n)),
+            np.empty((3, self.n)),
+            np.empty((3, self.n)),
+        )
         f_mean = np.zeros((3, self.n))
         for i in range(self.n):
             f_app[:, i] = self.f[:, i, i]
@@ -493,10 +506,7 @@ class RQPCADMMController:
         agg_err_M = np.empty((3, self.n))
         for i in range(self.n):
             total_res = np.max(
-                (
-                    total_res,
-                    np.linalg.norm(self.f[:, :, i] - f_mean, np.inf)
-                )
+                (total_res, np.linalg.norm(self.f[:, :, i] - f_mean, np.inf))
             )
             agg_err_F[:, i] = F[:, i] - (np.sum(f_app, axis=1) - f_app[:, i])
             agg_err_M[:, i] = M[:, i] - (
@@ -521,34 +531,48 @@ class RQPCADMMController:
         self,
         state: RQPState,
         acc_des: tuple[np.ndarray, np.ndarray],
-    ) -> np.ndarray:
+    ) -> tuple[np.ndarray, SolverStatistics]:
         iter = 0
         rho = self.rho0
+        total_solve_time = 0.0
+        err_seq = []
         while True:
+            primal_solve_time = 0.0
             for i in range(self.n):
                 # Solve primal problems.
-                self.f[:, :, i] = self.primal_solvers[i].solve(
+                self.f[:, :, i], time_ = self.primal_solvers[i].solve(
                     state, acc_des, self.lambda_f[:, :, i], rho, self.f_mean
                 )
+                primal_solve_time = np.max((primal_solve_time, time_))
+            total_solve_time += primal_solve_time
             iter += 1
+
+            start_time = perf_counter()
             # Rho update.
             rho = np.min((rho * self.tau_incr, self.rho_max))
             # Get mean and residual.
             self.f_mean, res = self._get_mean_and_residual(state)
             # Check if residual satisfies tolerance.
-            if res < self.res_tol:
+            if (res < self.res_tol) or (iter > self.max_iter):
                 break
+            err_seq.append(res)
             # Update dual variables.
             self._dual_update(rho)
+            stop_time = perf_counter()
+            total_solve_time += stop_time - start_time
         # Return applied forces.
         f_app = np.zeros((3, self.n))
         for i in range(self.n):
             f_app[:, i] = self.f[:, i, i]
-        return f_app
+        stats = SolverStatistics(iter, total_solve_time, err_seq)
+        return f_app, stats
 
     def get_force_cone_angle_bound(self) -> float:
         return self.primal_solvers[0].max_f_ang
 
-    def set_force_err_tolerance(self, tol: float, use_total_res: bool = True):
+    def set_force_err_tolerance(self, tol: float, use_total_res: bool = True) -> None:
         self.res_tol = tol
         self.use_total_res = use_total_res
+
+    def set_max_iter(self, max_iter: int) -> None:
+        self.max_iter = max_iter
