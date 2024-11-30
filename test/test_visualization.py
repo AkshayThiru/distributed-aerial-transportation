@@ -65,7 +65,10 @@ def _set_robot_camera_positions(vis: Visualizer, t: float) -> None:
     )
     vis["robot"].set_transform(tf.translation_matrix(robot_pos))
 
-    # Camera target (robot)
+    # Camera target (robot).
+    # See:
+    #   https://github.com/meshcat-dev/meshcat?tab=readme-ov-file#camera-control,
+    #   https://github.com/meshcat-dev/meshcat-python/blob/785bc9d5ba6f8a8bb79ee8b25f523805946c1fbd/src/meshcat/visualizer.py#L160.
     vis.set_cam_target(robot_pos)
 
 
