@@ -1,3 +1,4 @@
+import cvxpy as cv
 import numpy as np
 from scipy.linalg import polar
 
@@ -70,3 +71,20 @@ def compute_aggregate_statistics(
     avg = np.mean(a, axis=0)
     std = np.std(a, axis=0)
     return min, max, avg, std
+
+
+def cvx_cross_product(a: cv.Expression, b: cv.Expression) -> cv.Expression:
+    """Column-wise cross product between expressions a and b
+    Inputs:
+        a: (3, n) expression array,
+        b: (3, n) expression array.
+    Outputs:
+        cross: (3, n) expression array.
+    """
+    assert a.shape == b.shape
+    assert a.shape[0] == 3
+    cx = cv.multiply(a[1], b[2]) - cv.multiply(a[2], b[1])
+    cy = cv.multiply(a[2], b[0]) - cv.multiply(a[0], b[2])
+    cz = cv.multiply(a[0], b[1]) - cv.multiply(a[1], b[0])
+    cross = cv.reshape(cv.vstack([cx, cy, cz]), a.shape)
+    return cross
