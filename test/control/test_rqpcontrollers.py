@@ -10,6 +10,7 @@ from control.rqp_cadmm import RQPCADMMController
 from control.rqp_centralized import (RQPCentralizedController,
                                      RQPLowLevelController)
 from control.rqp_dd import RQPDDController
+from example.env_forest import Forest
 from example.setup import rqp_setup
 from system.rigid_quadrotor_payload import RQPDynamics, RQPState, RQPVisualizer
 from utils.math_utils import compute_aggregate_statistics
@@ -17,8 +18,10 @@ from utils.math_utils import compute_aggregate_statistics
 mpl.rcParams["mathtext.fontset"] = "cm"
 mpl.rcParams["font.family"] = "STIXGeneral"
 
+_VISUALIZE = True
 
-def _desired_acceleration(
+
+def _desired_acceleration_noenv(
     s: RQPState, t: float
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     radius = 1.0
@@ -40,6 +43,35 @@ def _desired_acceleration(
     dvl_des = a_ref - k_v * (s.vl - v_ref) - k_p * (s.xl - x_ref)
 
     dwl_des = np.array([np.sin(t), np.cos(t), np.pi / 12])
+
+    acc_des = (dvl_des, dwl_des)
+    return acc_des, x_ref, v_ref
+
+
+def _desired_acceleration_forest(
+    s: RQPState, t: float, env: Forest
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    x_ref = np.zeros((3,))
+    x_ref[0] = s.xl[0] + 1.0  # [m].
+    norm = np.linalg.norm(s.xl[:2] - env.mountain_center)
+    if norm >= env.mountain_radius:
+        x_ref[2] = 1.5  # [m].
+    else:
+        x_ref[2] = (
+            np.sqrt(env.mountain_sphere_radius**2 - norm**2)
+            - env.mountain_center_depth
+            + 1.5
+        )  # [m].
+    v_ref = np.array([0.5, 0.0, 0.0])
+
+    k_p = 1.0
+    k_v = 1.0
+    dvl_des = -k_v * (s.vl - v_ref) - k_p * (s.xl - x_ref)
+    norm = np.linalg.norm(dvl_des)
+    if norm > 0:
+        dvl_des = dvl_des / norm * np.min((norm, 1.0))
+
+    dwl_des = np.array([0.0, 0.0, 0.0])
 
     acc_des = (dvl_des, dwl_des)
     return acc_des, x_ref, v_ref
@@ -129,46 +161,58 @@ def main() -> None:
     dt = 1e-3
     hl_rel_freq = 10
     vis_rel_freq = 10
-    controller_type = "centralized"
-    # controller_type = "dual-decomposition"
+    # controller_type = "centralized"
+    controller_type = "dual-decomposition"
     # controller_type = "consensus-admm"
 
-    vis = meshcat.Visualizer()
-    vis.open()
+    if _VISUALIZE:
+        vis = meshcat.Visualizer()
+        vis.open()
+
+    T = 75.0  # [s].
+    env = Forest()
+    if _VISUALIZE:
+        env.visualize_env(vis)
+    _desired_acceleration = lambda s, t: _desired_acceleration_forest(s, t, env)
 
     params, col, s0 = rqp_setup(n)
     dyn = RQPDynamics(params, s0, dt)
     if controller_type == "centralized":
-        hl_controller = RQPCentralizedController(params, col, s0, dt, verbose=False)
+        hl_controller = RQPCentralizedController(
+            params, col, s0, dt, env, verbose=False
+        )
     elif controller_type == "dual-decomposition":
-        hl_controller = RQPDDController(params, col, s0, dt, verbose=False)
+        hl_controller = RQPDDController(params, col, s0, dt, env, verbose=False)
     elif controller_type == "consensus-admm":
-        hl_controller = RQPCADMMController(params, col, s0, dt, verbose=False)
+        hl_controller = RQPCADMMController(params, col, s0, dt, env, verbose=False)
     else:
         raise NotImplementedError
     max_f_ang = hl_controller.get_force_cone_angle_bound()
     ll_controller = RQPLowLevelController("pd", params, max_f_ang)
 
-    args = (params, col, s0, dt, False)
-    _plot_convergence_rate(dyn, args)
+    # args = (params, col, s0, dt, False)
+    # _plot_convergence_rate(dyn, args)
 
-    visualizer = RQPVisualizer(params, col, vis)
+    if _VISUALIZE:
+        visualizer = RQPVisualizer(params, col, vis)
 
-    t_seq = np.arange(0, 20, dt)
+    t_seq = np.arange(0, T, dt)
     x_err = np.empty(t_seq.shape)
     v_err = np.empty(t_seq.shape)
     iter = []
     solve_time = []
-    for i in range(len(t_seq)):
+    min_env_dist = []
+    for i in tqdm(range(len(t_seq))):
         if i % hl_rel_freq == 0:
             acc_des, x_ref, v_ref = _desired_acceleration(dyn.state, t_seq[i])
             f_des, stats = hl_controller.control(dyn.state, acc_des)
             if not (stats.iter == -1):
                 iter.append(stats.iter)
             solve_time.append(stats.solve_time)
+            min_env_dist.append(stats.min_env_dist)
         w = ll_controller.control(dyn.state, f_des)
         dyn.integrate(w)
-        if i % vis_rel_freq == 0:
+        if _VISUALIZE and (i % vis_rel_freq == 0):
             visualizer.update(dyn.state, w[0], vis)
         x_err[i] = np.linalg.norm(x_ref - dyn.state.xl)
         v_err[i] = np.linalg.norm(v_ref - dyn.state.vl)
@@ -185,6 +229,24 @@ def main() -> None:
     )
     ax[0].plot(t_seq, x_err, "-b", lw=1)
     ax[1].plot(t_seq, v_err, "-b", lw=1)
+
+    plt.show()
+
+    fig_width, fig_height = 3.54, 3.54  # [in].
+    _, ax = plt.subplots(
+        2,
+        1,
+        figsize=(fig_width, fig_height),
+        dpi=200,
+        sharex=True,
+        layout="constrained",
+    )
+    solve_time = np.array(solve_time)
+    t_seq = np.linspace(0.0, T, len(solve_time))
+    ax[0].plot(t_seq, solve_time, "-b", lw=1)
+    min_env_dist = np.array(min_env_dist)
+    t_seq = np.linspace(0.0, T, len(min_env_dist))
+    ax[1].plot(t_seq, min_env_dist, "-b", lw=1)
 
     plt.show()
 
