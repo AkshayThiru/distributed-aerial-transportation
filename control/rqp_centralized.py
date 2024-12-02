@@ -1,13 +1,15 @@
 from dataclasses import dataclass
-from typing import List
+from typing import Any, List
 
 import cvxpy as cv
+import hppfcl
 import numpy as np
 import pinocchio as pin
 from scipy import constants
 
 from system.rigid_quadrotor_payload import (RQPCollision, RQPParameters,
                                             RQPState)
+from utils.math_utils import rotation_matrix_a_to_b
 from utils.so3_tracking_controllers import (So3PDParameters, So3SMParameters,
                                             so3_pd_tracking_control,
                                             so3_sm_tracking_control)
@@ -17,6 +19,8 @@ from utils.so3_tracking_controllers import (So3PDParameters, So3SMParameters,
 class SolverStatistics:
     iter: int
     solve_time: float
+    collision: bool
+    min_env_dist: float
     err_seq: List[float] | None = None
 
 
@@ -35,7 +39,8 @@ class RQPCentralizedController:
             ||fi||_2 <= max_f, for i = 1, ..., n,
             e3.T Rl e3 >= cos(max_p_ang) -> second-order CBF,
             ||wl||^2 <= max_wl ** 2 -> CBF,
-            ||vl||^2 <= max_vl ** 2 -> CBF.
+            ||vl||^2 <= max_vl ** 2 -> CBF,
+            dist(obstacle) >= dist_eps, for obstacle in env -> CBF.
     """
 
     def __init__(
@@ -44,11 +49,12 @@ class RQPCentralizedController:
         col: RQPCollision,
         state: RQPState,
         dt: float,
+        env: Any = None,
         verbose: bool = False,
     ) -> None:
         self.verbose = verbose
         # Set system constants.
-        self._set_system_constants(params, col, dt)
+        self._set_system_constants(params, col, dt, env)
         # Set controller constants.
         self._set_controller_constants()
         # Set CVX variables: (dv_com, dvl, dwl, f).
@@ -89,7 +95,8 @@ class RQPCentralizedController:
         #   dh = -2 vl.T dvl,
         #   dh + alpha h >= 0.
         self._set_velocity_norm_cbf_constraint()
-        # TODO: Environment collision constraints.
+        # Environment collision avoidance CBF constraint.
+        self._set_env_collision_avoidance_cbf_constraint()
 
         self.cost = 0
         # Total force cost.
@@ -129,11 +136,13 @@ class RQPCentralizedController:
         params: RQPParameters,
         col: RQPCollision,
         dt: float,
+        env: Any,
     ) -> None:
         assert params.n >= 3
         self.n = params.n
         self.params = params
         self.col = col
+        self.env = env
 
         self.dt = dt
         self.g = constants.g
@@ -192,6 +201,13 @@ class RQPCentralizedController:
         max_vl = 1.0
         self.max_vl_sq = max_vl**2
         self.alpha_max_vl_cbf = 1.0
+        # Environment collision avoidance CBF constants.
+        self.dist_eps = 0.1  # [m].
+        self.vision_radius = self.col.collision_radius + 5.0  # [m].
+        self.nenv_cbfs = 10
+        #   Backup CBF constants.
+        self.max_deceleration = self.col.max_deceleration
+        self.alpha_env_cbf = 2.0
 
         # Costs:
         # Total force constant.
@@ -230,6 +246,9 @@ class RQPCentralizedController:
         self.R_w_hat_sq = cv.Parameter((3, 3))
         self.J_inv_w_cross_Jw = cv.Parameter(3)
         self.Rq_orth = cv.Parameter((6, self.n))
+        # Environment collision avoidance CBF.
+        self.env_cbf_lhs = cv.Parameter((self.nenv_cbfs, 3))
+        self.env_cbf_rhs = cv.Parameter(self.nenv_cbfs)
 
     def _update_cvx_parameters(
         self, state: RQPState, acc_des: tuple[np.ndarray, np.ndarray]
@@ -255,6 +274,67 @@ class RQPCentralizedController:
             Rq_ = state.R[:, :, i] @ pin.exp3(state.w[:, i] * self.dt)
             Rq_orth_[:, i] = Rq_[:, :2].reshape((6,))
         self.Rq_orth.value = Rq_orth_
+        # Environment collision CBF.
+        self._set_collision_avoidance_cbf_parameters(state)
+
+    def _set_collision_avoidance_cbf_parameters(self, state: RQPState) -> None:
+        self.env_cbf_lhs.value = np.zeros((self.nenv_cbfs, 3))
+        self.collision = False
+        self.min_env_dist = self.vision_radius
+        self.env_cbf_rhs.value = (
+            -self.alpha_env_cbf
+            * (self.min_env_dist - self.dist_eps)
+            * np.ones((self.nenv_cbfs,))
+        )
+        if self.env is None:
+            return
+
+        # Set system collision object and transformation.
+        capsule_radius = self.col.collision_radius
+        capsule_height = 0.5 * np.dot(state.vl, state.vl) / self.max_deceleration
+        obj = hppfcl.Capsule(capsule_radius, capsule_height)
+        tf1 = hppfcl.Transform3f()
+        speed = np.linalg.norm(state.vl)
+        if speed == 0:
+            tf1.setTranslation(state.xl)
+        else:
+            capsule_dir = state.vl / speed
+            tf1.setTranslation(state.xl + capsule_height / 2.0 * capsule_dir)
+            tf1.setRotation(
+                rotation_matrix_a_to_b(np.array([0.0, 0.0, 1.0]), capsule_dir)
+            )
+        # Get collision data.
+        data = self.env.centralized_distance(obj, tf1, self.vision_radius)
+        self.collision, min_dists, nearest_pts1, nearest_pts2 = data
+        k = np.min([min_dists.shape[0], self.nenv_cbfs])
+        if (k > 0) and (speed > 0):
+            self.min_env_dist = np.min(min_dists)
+            if k < min_dists.shape[0]:
+                idx = np.argpartition(min_dists, k)[:k]
+            else:
+                idx = np.arange(k)
+            # Compute CBF constants.
+            lhs = np.zeros((self.nenv_cbfs, 3))
+            rhs = np.zeros((self.nenv_cbfs,))
+            for i in range(k):
+                idxi = idx[i]
+                di = min_dists[idxi]
+                if di <= 1e-4:
+                    continue
+                projection = np.dot(nearest_pts1[idxi, :] - state.xl, capsule_dir)
+                projection = np.max([0.0, np.min([capsule_height, projection])])
+                min_time = np.sqrt(
+                    2.0 * (capsule_height - projection) / self.max_deceleration
+                )
+                min_time = np.max([0.0, speed / self.max_deceleration - min_time])
+                normal = nearest_pts1[idxi, :] - nearest_pts2[idxi, :]
+                normal = normal / np.linalg.norm(normal)
+                lhs[i] = normal * min_time
+                rhs[i] = -self.alpha_env_cbf * (di - self.dist_eps) - np.dot(
+                    normal, state.vl
+                )
+            self.env_cbf_lhs.value = lhs
+            self.env_cbf_rhs.value = rhs
 
     # Constraints.
     def _set_dynamics_constraint(self) -> None:
@@ -310,6 +390,9 @@ class RQPCentralizedController:
             >= 0
         ]
 
+    def _set_env_collision_avoidance_cbf_constraint(self) -> None:
+        self.cons += [self.env_cbf_lhs @ self.dvl >= self.env_cbf_rhs]
+
     # Costs.
     def _set_total_force_cost(self) -> None:
         f_err = cv.sum(self.f, axis=1) - self.mT * self.g * np.array([0.0, 0.0, 1.0])
@@ -359,7 +442,9 @@ class RQPCentralizedController:
             self.prev_f = self.f.value
         elif self.verbose:
             print(f"Problem not solved to optimality, status: {self.prob.status}")
-        stats = SolverStatistics(-1, self.prob.solver_stats.solve_time)
+        stats = SolverStatistics(
+            -1, self.prob.solver_stats.solve_time, self.collision, self.min_env_dist
+        )
         return self.prev_f, stats
 
     def get_force_cone_angle_bound(self) -> float:
