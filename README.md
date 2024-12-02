@@ -3,7 +3,7 @@
 ### Requirements
 
 - Core packages:
-  - Collision detection: `hppfcl`
+  - Collision detection: `coal` (previously `hppfcl`)
   - Dynamics: `pinocchio`
   - Optimization: <br>
     Modelling language: `cvxpy` <br>
@@ -19,3 +19,10 @@
 
 - Other packages:
   - Progress meter: `tqdm`
+
+---
+
+### Setup
+
+    export PYTHONPATH=$PYTHONPATH:pwd
+    export PYTHONOPTIMIZE=TRUE
