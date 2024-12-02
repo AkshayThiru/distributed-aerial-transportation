@@ -1,8 +1,9 @@
 from dataclasses import dataclass
 from time import perf_counter
-from typing import List
+from typing import Any, List
 
 import cvxpy as cv
+import hppfcl
 import numpy as np
 import pinocchio as pin
 from scipy import constants
@@ -10,6 +11,10 @@ from scipy import constants
 from control.rqp_centralized import SolverStatistics
 from system.rigid_quadrotor_payload import (RQPCollision, RQPParameters,
                                             RQPState)
+from utils.math_utils import rotation_matrix_a_to_b
+
+# Options: CLARABEL, SCS, CVXOPT
+_RQPCDMM_SOLVER = cv.CLARABEL
 
 
 @dataclass
@@ -36,7 +41,8 @@ class RQPPrimalSolver:
             ||fi||_2 <= max_f,
             e3.T Rl e3 >= cos(max_p_ang) -> second-order CBF,
             ||wl||^2 <= max_wl ** 2 -> CBF,
-            ||vl||^2 <= max_vl ** 2 -> CBF.
+            ||vl||^2 <= max_vl ** 2 -> CBF,
+            dist(obstacle) >= dist_eps, for obstacle in (env and vision cone) -> CBF.
     """
 
     def __init__(
@@ -46,11 +52,12 @@ class RQPPrimalSolver:
         idx: Index,
         state: RQPState,
         dt: float,
+        env: Any = None,
         verbose: bool = False,
     ) -> None:
         self.verbose = verbose
         # Set system constants.
-        self._set_system_constants(params, col, idx, dt)
+        self._set_system_constants(params, col, idx, dt, env)
         # Set controller constants.
         self._set_controller_constants()
         # Set CVX variables: (dv_com, dvl, dwl, f).
@@ -91,7 +98,8 @@ class RQPPrimalSolver:
         #   dh = -2 vl.T dvl,
         #   dh + alpha h >= 0.
         self._set_velocity_norm_cbf_constraint()
-        # TODO: Environment collision constraints.
+        # Environment collision avoidance CBF constraint.
+        self._set_env_collision_avoidance_cbf_constraint()
 
         self.cost = 0
         # Total force cost.
@@ -129,7 +137,7 @@ class RQPPrimalSolver:
         self.prob = cv.Problem(cv.Minimize(self.cost), self.cons)
         if self.verbose:
             print("Optimization problem is DCP:", self.prob.is_dcp())
-        self.prob.solve(solver=cv.CLARABEL, warm_start=True)
+        self.prob.solve(solver=_RQPCDMM_SOLVER, warm_start=True)
 
     def _set_system_constants(
         self,
@@ -137,12 +145,14 @@ class RQPPrimalSolver:
         col: RQPCollision,
         idx: Index,
         dt: float,
+        env: Any,
     ) -> None:
         assert params.n >= 3
         self.n = params.n
         self.params = params
         self.col = col
         self.idx = idx
+        self.env = env
 
         self.dt = dt
         self.g = constants.g
@@ -201,6 +211,14 @@ class RQPPrimalSolver:
         max_vl = 1.0
         self.max_vl_sq = max_vl**2
         self.alpha_max_vl_cbf = 1.0
+        # Environment collision avoidance CBF constants.
+        self.dist_eps = 0.1  # [m].
+        self.vision_radius = self.col.collision_radius + 5.0  # [m].
+        self.vision_cone_ang = 100.0 * np.pi / 180.0  # Half angle, [rad].
+        self.nenv_cbfs = 10
+        #   Backup CBF constants.
+        self.max_deceleration = self.col.max_deceleration
+        self.alpha_env_cbf = 1.5
 
         # Costs:
         # Total force constant.
@@ -243,6 +261,9 @@ class RQPPrimalSolver:
         self.lambda_f = cv.Parameter((3, self.n))
         self.cadmm_rho = cv.Parameter(nonneg=True)
         self.f_mean_rho = cv.Parameter((3, self.n))
+        # Environment collision avoidance CBF.
+        self.env_cbf_lhs = cv.Parameter((self.nenv_cbfs, 3))
+        self.env_cbf_rhs = cv.Parameter(self.nenv_cbfs)
 
     def _update_cvx_parameters(
         self,
@@ -280,6 +301,76 @@ class RQPPrimalSolver:
         self.lambda_f.value = lambda_f
         self.cadmm_rho.value = cadmm_rho
         self.f_mean_rho.value = cadmm_rho * f_mean
+        # Environment collision CBF.
+        self._set_collision_avoidance_cbf_parameters(state)
+
+    def _set_collision_avoidance_cbf_parameters(self, state: RQPState) -> None:
+        self.env_cbf_lhs.value = np.zeros((self.nenv_cbfs, 3))
+        self.collision = False
+        self.min_env_dist = self.vision_radius
+        self.env_cbf_rhs.value = (
+            -self.alpha_env_cbf
+            * (self.min_env_dist - self.dist_eps)
+            * np.ones((self.nenv_cbfs,))
+        )
+        if self.env is None:
+            return
+
+        # Set system collision object and transformation.
+        capsule_radius = self.col.collision_radius
+        capsule_height = 0.5 * np.dot(state.vl, state.vl) / self.max_deceleration
+        obj = hppfcl.Capsule(capsule_radius, capsule_height)
+        tf1 = hppfcl.Transform3f()
+        speed = np.linalg.norm(state.vl)
+        if speed == 0:
+            tf1.setTranslation(state.xl)
+        else:
+            capsule_dir = state.vl / speed
+            tf1.setTranslation(state.xl + capsule_height / 2.0 * capsule_dir)
+            tf1.setRotation(
+                rotation_matrix_a_to_b(np.array([0.0, 0.0, 1.0]), capsule_dir)
+            )
+        # Get collision data.
+        camera_pos = (state.xl + state.Rl @ self.params.r[:, self.idx.i])[:2]
+        dir = camera_pos - state.xl[:2]
+        norm = np.linalg.norm(dir)
+        if norm == 0:
+            self.collision = True
+            return
+        dir = dir / norm
+        data = self.env.distributed_distance(
+            obj, tf1, self.vision_radius, dir, camera_pos, self.vision_cone_ang
+        )
+        self.collision, min_dists, nearest_pts1, nearest_pts2 = data
+        k = np.min([min_dists.shape[0], self.nenv_cbfs])
+        if (k > 0) and (speed > 0):
+            self.min_env_dist = np.min(min_dists)
+            if k < min_dists.shape[0]:
+                idx = np.argpartition(min_dists, k)[:k]
+            else:
+                idx = np.arange(k)
+            # Compute CBF constants.
+            lhs = np.zeros((self.nenv_cbfs, 3))
+            rhs = np.zeros((self.nenv_cbfs,))
+            for i in range(k):
+                idxi = idx[i]
+                di = min_dists[idxi]
+                if di <= 1e-4:
+                    continue
+                projection = np.dot(nearest_pts1[idxi, :] - state.xl, capsule_dir)
+                projection = np.max([0.0, np.min([capsule_height, projection])])
+                min_time = np.sqrt(
+                    2.0 * (capsule_height - projection) / self.max_deceleration
+                )
+                min_time = np.max([0.0, speed / self.max_deceleration - min_time])
+                normal = nearest_pts1[idxi, :] - nearest_pts2[idxi, :]
+                normal = normal / np.linalg.norm(normal)
+                lhs[i] = normal * min_time
+                rhs[i] = -self.alpha_env_cbf * (di - self.dist_eps) - np.dot(
+                    normal, state.vl
+                )
+            self.env_cbf_lhs.value = lhs
+            self.env_cbf_rhs.value = rhs
 
     # Constraints.
     def _set_dynamics_constraint(self) -> None:
@@ -338,6 +429,9 @@ class RQPPrimalSolver:
             >= 0
         ]
 
+    def _set_env_collision_avoidance_cbf_constraint(self) -> None:
+        self.cons += [self.env_cbf_lhs @ self.dvl >= self.env_cbf_rhs]
+
     # Costs.
     def _set_total_force_cost(self) -> None:
         f_err = cv.sum(self.f, axis=1) - self.mT * self.g * np.array([0.0, 0.0, 1.0])
@@ -392,15 +486,19 @@ class RQPPrimalSolver:
         lambda_f: np.ndarray = None,
         cadmm_rho: float = 0,
         f_mean: np.ndarray = None,
-    ) -> tuple[np.ndarray, float]:
+    ) -> tuple[np.ndarray, float, bool, float]:
         self._update_cvx_parameters(state, acc_des, lambda_f, cadmm_rho, f_mean)
-        self.prob.solve(solver=cv.CLARABEL, warm_start=True)
+        try:
+            self.prob.solve(solver=_RQPCDMM_SOLVER, warm_start=True)
+        except:
+            self.prev_f = self.f_eq
+
         if self.prob.status == cv.OPTIMAL:
             self.prev_f = self.f.value
         elif self.verbose:
             print(f"Problem not solved to optimality, status: {self.prob.status}")
         solve_time = self.prob.solver_stats.solve_time
-        return self.prev_f, solve_time
+        return self.prev_f, solve_time, self.collision, self.min_env_dist
 
     def set_leader(self) -> None:
         self.idx.is_leader = True
@@ -418,11 +516,12 @@ class RQPCADMMController:
         col: RQPCollision,
         state: RQPState,
         dt: float,
+        env: Any = None,
         verbose: bool = False,
     ) -> None:
         self.verbose = verbose
         # Set system constants.
-        self._set_system_constants(params, col, dt)
+        self._set_system_constants(params, col, dt, env)
         # Set controller constants.
         self._set_controller_constants()
         # Set variables: (f, F, M, lambda_F, lambda_M).
@@ -432,7 +531,7 @@ class RQPCADMMController:
         self.primal_solvers: List[RQPPrimalSolver] = []
         for i in range(self.n):
             idx = Index(i, (i == self.leader_idx))
-            solver = RQPPrimalSolver(params, col, idx, state, dt, verbose=False)
+            solver = RQPPrimalSolver(params, col, idx, state, dt, env, verbose=False)
             self.primal_solvers.append(solver)
 
         # Set warm start solutions.
@@ -443,12 +542,14 @@ class RQPCADMMController:
         params: RQPParameters,
         col: RQPCollision,
         dt: float,
+        env: Any = None,
     ) -> None:
         assert params.n >= 3
         self.n = params.n
         self.params = params
         self.col = col
         self.dt = dt
+        self.env = env
 
         self.r_com = params.r_com
 
@@ -536,14 +637,18 @@ class RQPCADMMController:
         rho = self.rho0
         total_solve_time = 0.0
         err_seq = []
+        collision = False
+        min_env_dist = self.primal_solvers[0].vision_radius
         while True:
             primal_solve_time = 0.0
             for i in range(self.n):
                 # Solve primal problems.
-                self.f[:, :, i], time_ = self.primal_solvers[i].solve(
-                    state, acc_des, self.lambda_f[:, :, i], rho, self.f_mean
-                )
+                self.f[:, :, i], time_, collision_, min_env_dist_ = self.primal_solvers[
+                    i
+                ].solve(state, acc_des, self.lambda_f[:, :, i], rho, self.f_mean)
                 primal_solve_time = np.max((primal_solve_time, time_))
+                collision = collision or collision_
+                min_env_dist = np.min((min_env_dist, min_env_dist_))
             total_solve_time += primal_solve_time
             iter += 1
 
@@ -564,7 +669,9 @@ class RQPCADMMController:
         f_app = np.zeros((3, self.n))
         for i in range(self.n):
             f_app[:, i] = self.f[:, i, i]
-        stats = SolverStatistics(iter, total_solve_time, err_seq)
+        stats = SolverStatistics(
+            iter, total_solve_time, collision, min_env_dist, err_seq
+        )
         return f_app, stats
 
     def get_force_cone_angle_bound(self) -> float:
