@@ -20,6 +20,7 @@ from example.rqp_example import RQPStateData
 from example.setup import rqp_setup
 from system.rigid_quadrotor_payload import (RQPCollision, RQPParameters,
                                             RQPState, RQPVisualizer)
+from utils.math_utils import compute_aggregate_statistics
 
 _DIR_PATH = os.path.dirname(os.path.realpath(__file__))
 
@@ -427,6 +428,30 @@ def _plot_min_dist(controller_type: str, logs: dict, dist_eps: float) -> None:
             dpi=_SAVE_DPI,
         )  # , bbox_inches='tight')
 
+def _print_stats(logs: dict) -> None:
+    iter_seq: List[int] = logs["iter_seq"]
+    iter_seq = np.array(iter_seq)
+    # iter_seq = iter_seq[iter_seq <= 20]
+    if len(iter_seq) > 0:
+        iter_stats = compute_aggregate_statistics(iter_seq)
+        print(
+            f"Solver iterations: "
+            + f"min: {iter_stats[0]:5.2f}, "
+            + f"max: {iter_stats[1]:5.2f}, "
+            + f"avg: {iter_stats[2]:5.2f}, "
+            + f"std: {iter_stats[3]:5.2f}"
+        )
+    solve_time_seq = logs["solve_time_seq"]
+    if len(solve_time_seq) > 0:
+        solver_time_stats = compute_aggregate_statistics(np.array(solve_time_seq))
+        print(
+            f"Solver solve time (ms): "
+            + f"min: {solver_time_stats[0] * 1e3:7.3f}, "
+            + f"max: {solver_time_stats[1] * 1e3:7.3f}, "
+            + f"avg: {solver_time_stats[2] * 1e3:7.3f}, "
+            + f"std: {solver_time_stats[3] * 1e3:7.3f}"
+        )
+
 
 def main() -> None:
     # controller_type = "centralized"
@@ -456,6 +481,7 @@ def main() -> None:
     _visualization(controller_type, logs, env)
     _plot_xy_trajectory(controller_type, logs, env, params, col, hl_controller)
     _plot_min_dist(controller_type, logs, hl_controller.get_dist_eps())
+    _print_stats(logs)
 
 
 if __name__ == "__main__":
