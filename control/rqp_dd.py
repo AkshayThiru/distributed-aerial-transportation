@@ -754,6 +754,9 @@ class RQPDDController:
     def get_force_cone_angle_bound(self) -> float:
         return self.primal_solvers[0].max_f_ang
 
+    def get_dist_eps(self) -> float:
+        return self.primal_solvers[0].dist_eps
+
     def set_force_err_tolerance(self, tol: float):
         self.prim_inf_tol = tol
 

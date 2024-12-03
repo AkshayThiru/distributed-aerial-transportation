@@ -16,7 +16,7 @@ _BARK_MATERIAL = gm.MeshLambertMaterial(
     color=0x694B37, wireframe=False, opacity=0.4, reflectivity=0.5
 )
 _TREECONE_MATERIAL = gm.MeshLambertMaterial(
-    color=0x5F926A, wireframe=False, opacity=0.25, reflectivity=0.5
+    color=0x5F926A, wireframe=False, opacity=0.1, reflectivity=0.5
 )
 
 _MOUNTAIN_CENTER = np.array([30.0, 0.0])  # [m].

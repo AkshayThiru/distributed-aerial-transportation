@@ -450,6 +450,9 @@ class RQPCentralizedController:
     def get_force_cone_angle_bound(self) -> float:
         return self.max_f_ang
 
+    def get_dist_eps(self) -> float:
+        return self.dist_eps
+
 
 class RQPLowLevelController:
     """Low-level (moment + thrust) controller for the quadrotor system."""

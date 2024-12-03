@@ -677,6 +677,9 @@ class RQPCADMMController:
     def get_force_cone_angle_bound(self) -> float:
         return self.primal_solvers[0].max_f_ang
 
+    def get_dist_eps(self) -> float:
+        return self.primal_solvers[0].dist_eps
+
     def set_force_err_tolerance(self, tol: float, use_total_res: bool = True) -> None:
         self.res_tol = tol
         self.use_total_res = use_total_res

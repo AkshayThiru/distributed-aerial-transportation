@@ -1,2 +1,5 @@
 # Image files
 *.png
+
+# Video files
+*.mkv
