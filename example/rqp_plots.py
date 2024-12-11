@@ -27,7 +27,7 @@ _DIR_PATH = os.path.dirname(os.path.realpath(__file__))
 mpl.rcParams["mathtext.fontset"] = "cm"
 mpl.rcParams["font.family"] = "STIXGeneral"
 _HALF_COL_WIDTH = 3.54  # [in].
-_FULL_COL_WIDTH = 5.0  # 7.16  # [in].
+_FULL_COL_WIDTH = 7.16  # [in].
 _FIG_DPI = 200
 _SAVE_DPI = 1000  # >= 600.
 _SAVE_FIG = True
@@ -36,9 +36,9 @@ _SAVE_FIG = True
 _GRASS_COLOR = to_rgb("#70AB94")
 _BARK_COLOR = to_rgb("#694B37")
 _MESH_COLOR = to_rgb("#FF22DD")
-_QUADROTOR_COLOR = to_rgb("#1590A0")
-_PAYLOAD_COLOR = to_rgb("#D70E36")
-_VISIONCONE_COLOR = to_rgb("#A8AEAC")
+_QUADROTOR_COLOR = to_rgb("#1590A0") # [213 / 255, 213 / 255, 255 / 255]
+_PAYLOAD_COLOR = to_rgb("#D70E36") # [242 / 255, 242 / 255, 242 / 255]
+_VISIONCONE_COLOR = to_rgb("#A8AEAC") # [255 / 255, 238 / 255, 170 / 255]
 
 
 def _visualization(controller_type: str, logs: dict, env: Forest) -> None:
@@ -109,6 +109,44 @@ def _visualization(controller_type: str, logs: dict, env: Forest) -> None:
             start_time = perf_counter()
 
 
+def _snapshot(controller_type: str, logs: dict, env: Forest) -> None:
+    n: int = logs["n"]
+    T: float = logs["T"]
+    dt: float = logs["dt"]
+    hl_rel_freq: int = logs["hl_rel_freq"]
+    log_freq: int = logs["log_freq"]
+    assert hl_rel_freq == log_freq
+    t_seq = np.arange(0.0, T, log_freq * dt)
+    state_seq: List[RQPStateData] = logs["state_seq"]
+    assert len(t_seq) == len(state_seq)
+
+    if controller_type == "centralized":
+        key_frames = np.array([0.5]) # < 0.72
+    elif controller_type == "dual-decomposition":
+        key_frames = np.array([0.37, 0.41, 0.49, 0.52, 0.55, 0.58, 0.61, 0.64, 0.67]) # < 0.75
+    elif controller_type == "consensus-admm":
+        key_frames = np.array([0.5]) # < 0.85
+    key_idx = (key_frames * T / (dt * log_freq)).astype(int)
+
+    vis = meshcat.Visualizer()
+    vis.open()
+
+    env.visualize_env(vis)
+
+    params, col, _ = rqp_setup(n)
+
+    for k in range(len(key_idx)):
+        prefix = "ss" + str(k) + "_"
+        # Add RQP visualizer.
+        visualizer = RQPVisualizer(params, col, vis, prefix=prefix)
+        # Visualization update.
+        f = np.zeros((n,))
+        i: int = key_idx[k]
+        s = state_seq[i]
+        state = RQPState(s.R, s.w, s.xl, s.vl, s.Rl, s.wl)
+        visualizer.update(state, f, vis, prefix=prefix)
+
+
 def _draw_capsule(
     ax: Any, c1: np.ndarray, c2: np.ndarray, radius: float, **kwargs
 ) -> None:
@@ -153,7 +191,7 @@ def _plot_xy_trajectory(
     fig, ax = plt.subplots(
         1,
         1,
-        figsize=(_FULL_COL_WIDTH, fig_height),
+        figsize=(_HALF_COL_WIDTH, fig_height),
         dpi=_FIG_DPI,
         sharey=False,
         layout="constrained",
@@ -198,7 +236,7 @@ def _plot_xy_trajectory(
     for i in range((len(state_seq))):
         xl.append(state_seq[i].xl)
     xl = np.array(xl).T
-    ax.plot(xl[0, :], xl[1, :], ls="--", lw=1, color="black", label=r"$x_l$")
+    ax.plot(xl[0, :], xl[1, :], ls="--", lw=1, color="black", label=r"$x_L$")
     # Draw mesh, vision cones, payload, and quadrotor at key frames.
     T: int = logs["T"]
     dt: float = logs["dt"]
@@ -280,7 +318,7 @@ def _plot_xy_trajectory(
                     ec="none",
                     lw=1.0,
                     alpha=0.25,
-                    label=r"vision cone",
+                    label=r"vision region",
                 )
             else:
                 vc = patches.Circle(
@@ -305,7 +343,7 @@ def _plot_xy_trajectory(
                         fc=_VISIONCONE_COLOR,
                         ec="none",
                         alpha=0.25,
-                        label=r"vision cone",
+                        label=r"vision region",
                     )
                 else:
                     vc = patches.Wedge(
@@ -340,8 +378,8 @@ def _plot_xy_trajectory(
     )
     ax.margins(axis_margins, axis_margins)
     ax.axis("equal")
-    ax.set_xlim([5.0, 55.0])  # [m].
-    ax.set_ylim([-7.0, 7.0])  # [m].
+    ax.set_xlim([6.0, 46.0])  # [5.0, 55.0] [m].
+    ax.set_ylim([-3.0, 4.0])  # [-7.0, -7.0] [m].
 
     plt.show()
 
@@ -390,14 +428,14 @@ def _plot_min_dist(controller_type: str, logs: dict, dist_eps: float) -> None:
         min_env_dist_seq,
         "-b",
         lw=1,
-        label=r"$\text{min}_i \ d(x_l(t), \mathcal{O}_i)$",
+        label=r"$\text{min}_j \ \text{dist}(CC(\boldsymbol{x}_r(t)), \mathcal{O}_j)$",
     )
     ax.plot(
         t_seq,
         dist_eps * np.ones_like(t_seq),
         "--k",
         lw=1,
-        label=r"$\epsilon_{\text{margin}}$",
+        label=r"$\epsilon_d$",
     )
     ax.legend(
         loc="upper right",
@@ -479,6 +517,7 @@ def main() -> None:
         hl_controller = RQPCADMMController(params, col, s0, dt, env, verbose=False)
 
     _visualization(controller_type, logs, env)
+    _snapshot(controller_type, logs, env)
     _plot_xy_trajectory(controller_type, logs, env, params, col, hl_controller)
     _plot_min_dist(controller_type, logs, hl_controller.get_dist_eps())
     _print_stats(logs)

@@ -15,8 +15,17 @@ _INTEGRATION_STEPS_PER_ROTATION_PROJECTION = 20
 
 _DIR_PATH = os.path.dirname(os.path.realpath(__file__))
 _QUADROTOR_OBJ_PATH = _DIR_PATH + "/../objs/quadrotor.obj"
-_OBJ_MATERIAL = gm.MeshLambertMaterial(
-    color=0xFFFFFF, wireframe=False, opacity=1, reflectivity=0.5
+_PAYLOAD_MATERIAL = gm.MeshLambertMaterial(
+    color=0xF2F2F2, # 0xFFFFFF,
+    wireframe=False,
+    opacity=1,
+    reflectivity=0.5
+)
+_QUADROTOR_MATERIAL = gm.MeshLambertMaterial(
+    color=0xD5D5FF, # 0xFFFFFF,
+    wireframe=False,
+    opacity=1,
+    reflectivity=0.5
 )
 _MESH_MATERIAL = gm.MeshBasicMaterial(
     color=0xFF22DD, wireframe=True, wirelinewidth=0.0, opacity=0.5
@@ -305,30 +314,30 @@ class RQPVisualizer:
     """Class for visualizing the RQP system."""
 
     def __init__(
-        self, param: RQPParameters, col: RQPCollision, vis: Visualizer
+        self, param: RQPParameters, col: RQPCollision, vis: Visualizer, prefix: str = ""
     ) -> None:
         self.param = param
         self.col = col
 
         # Display system in zero configuration.
         # Set payload object.
-        vis["rqp_payload"].set_object(self.col.payload_obj, _OBJ_MATERIAL)
+        vis[prefix + "rqp_payload"].set_object(self.col.payload_obj, _PAYLOAD_MATERIAL)
         if _DRAW_COLLISION_CAPSULE:
-            vis["rqp_collision_mesh"].set_object(
+            vis[prefix + "rqp_collision_mesh"].set_object(
                 gm.Sphere(self.col.collision_radius), _MESH_MATERIAL
             )
         else:
             # Set payload meshes.
-            vis["rqp_payload_mesh"].set_object(self.col.payload_mesh, _MESH_MATERIAL)
+            vis[prefix + "rqp_payload_mesh"].set_object(self.col.payload_mesh, _MESH_MATERIAL)
         # Set quadrotor objects and meshes.
         n = self.param.n
         for i in range(n):
-            quadrotor = "rqp_quadrotor_" + str(i)
-            vis[quadrotor].set_object(self.col.quad_obj, _OBJ_MATERIAL)
+            quadrotor = prefix + "rqp_quadrotor_" + str(i)
+            vis[quadrotor].set_object(self.col.quad_obj, _QUADROTOR_MATERIAL)
             T = tf.translation_matrix(self.param.r[:, i])
             vis[quadrotor].set_transform(T)
             if not _DRAW_COLLISION_CAPSULE:
-                quadrotor_mesh = "rqp_quadrotor_mesh_" + str(i)
+                quadrotor_mesh = prefix + "rqp_quadrotor_mesh_" + str(i)
                 vis[quadrotor_mesh].set_object(
                     gm.Sphere(_QUADROTOR_RADIUS), _MESH_MATERIAL
                 )
@@ -336,8 +345,8 @@ class RQPVisualizer:
         # Set force arrows.
         if _DRAW_FORCE_ARROWS:
             for i in range(n):
-                force_tail = "rqp_force_tail_" + str(i)
-                force_head = "rqp_force_head_" + str(i)
+                force_tail = prefix + "rqp_force_tail_" + str(i)
+                force_head = prefix + "rqp_force_head_" + str(i)
                 vis[force_tail].set_object(
                     gm.Cylinder(height=_FORCE_MIN_LENGTH, radius=_FORCE_TAIL_RADIUS),
                     _FORCE_MATERIAL,
@@ -362,7 +371,7 @@ class RQPVisualizer:
                 T[2, 3] += _FORCE_MIN_LENGTH / 2 + _FORCE_HEAD_LENGTH / 2
                 vis[force_head].set_transform(T)
 
-    def update(self, state: RQPState, f: np.ndarray, vis: Visualizer) -> None:
+    def update(self, state: RQPState, f: np.ndarray, vis: Visualizer, prefix: str = "") -> None:
         xl = state.xl
         Rl = state.Rl
         Rq = state.R
@@ -372,15 +381,15 @@ class RQPVisualizer:
         # Update payload object and mesh.
         T = tf.translation_matrix(xl)
         T[:3, :3] = Rl
-        vis["rqp_payload"].set_transform(T)
+        vis[prefix + "rqp_payload"].set_transform(T)
         if _DRAW_COLLISION_CAPSULE:
-            vis["rqp_collision_mesh"].set_transform(T)
+            vis[prefix + "rqp_collision_mesh"].set_transform(T)
         else:
-            vis["rqp_payload_mesh"].set_transform(T)
+            vis[prefix + "rqp_payload_mesh"].set_transform(T)
         # Update quadrotor objects and meshes.
         for i in range(n):
-            quadrotor = "rqp_quadrotor_" + str(i)
-            quadrotor_mesh = "rqp_quadrotor_mesh_" + str(i)
+            quadrotor = prefix + "rqp_quadrotor_" + str(i)
+            quadrotor_mesh = prefix + "rqp_quadrotor_mesh_" + str(i)
             T = tf.translation_matrix(xl + Rl @ r[:, i])
             T[:3, :3] = Rq[:, :, i]
             vis[quadrotor].set_transform(T)
@@ -389,8 +398,8 @@ class RQPVisualizer:
         # Update force arrows.
         if _DRAW_FORCE_ARROWS:
             for i in range(n):
-                force_tail = "rqp_force_tail_" + str(i)
-                force_head = "rqp_force_head_" + str(i)
+                force_tail = prefix + "rqp_force_tail_" + str(i)
+                force_head = prefix + "rqp_force_head_" + str(i)
                 force_dir = Rq[:, 2, i]
                 force_length = np.max([f[i] * _FORCE_SCALING, _FORCE_MIN_LENGTH])
                 T = tf.translation_matrix(
